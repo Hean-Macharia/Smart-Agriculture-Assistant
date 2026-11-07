@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,8 +20,9 @@ class Settings(BaseSettings):
     mongodb_server_selection_timeout_ms: int = 2500
 
     jwt_secret_key: str = Field(default="", repr=False)
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
+    admin_bootstrap_token: str = Field(default="", repr=False)
 
     mpesa_consumer_key: str = Field(default="", repr=False)
     mpesa_consumer_secret: str = Field(default="", repr=False)

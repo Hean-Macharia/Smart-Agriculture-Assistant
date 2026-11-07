@@ -1,25 +1,70 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError
 
 from app.core.config import settings
 from app.core.database import close_mongo_connection
+from app.core.dependencies import (
+    get_buyer_repository,
+    get_crop_repository,
+    get_farm_repository,
+    get_farmer_repository,
+    get_marketplace_repository,
+    get_order_repository,
+    get_user_repository,
+)
+from app.routes.auth import router as auth_router
+from app.routes.buyers import router as buyers_router
+from app.routes.crops import router as crops_router
+from app.routes.farms import router as farms_router
+from app.routes.farmers import router as farmers_router
 from app.routes.health import router as health_router
+from app.routes.marketplace import router as marketplace_router
+from app.routes.orders import router as orders_router
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     yield
+    get_user_repository.cache_clear()
+    get_farmer_repository.cache_clear()
+    get_buyer_repository.cache_clear()
+    get_farm_repository.cache_clear()
+    get_crop_repository.cache_clear()
+    get_marketplace_repository.cache_clear()
+    get_order_repository.cache_clear()
     close_mongo_connection()
 
 
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for agricultural advice and produce market linkage.",
-    version="0.1.0",
+    version="0.4.0",
     debug=settings.debug,
     lifespan=lifespan,
 )
 app.include_router(health_router)
+app.include_router(auth_router)
+app.include_router(farmers_router)
+app.include_router(buyers_router)
+app.include_router(farms_router)
+app.include_router(crops_router)
+app.include_router(marketplace_router)
+app.include_router(orders_router)
+
+
+@app.exception_handler(PyMongoError)
+async def database_error_handler(_: Request, exc: PyMongoError) -> JSONResponse:
+    # Do not log driver exception text: it can include a credential-bearing URI.
+    logger.error("MongoDB operation failed (%s)", type(exc).__name__)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database temporarily unavailable"},
+    )

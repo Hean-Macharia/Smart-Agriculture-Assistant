@@ -2,10 +2,15 @@
   "info": {
     "_postman_id": "5d385b41-1830-4ecf-a160-81bfa9e4215f",
     "name": "Smart_Agriculture_API",
-    "description": "Phase 1 starter requests. MongoDB readiness is a live connectivity check; no external providers are called in this phase.",
+    "description": "Health and Phase 2-4 authentication, farmer/buyer profiles, farm, crop, marketplace and order endpoints. Product browsing and stock reservation use MongoDB. Payment provider flows are not implemented until Phase 5.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "variable": [{"key": "base_url", "value": "http://127.0.0.1:8000"}],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    }
+  ],
   "item": [
     {
       "name": "Health",
@@ -18,24 +23,40 @@
             "url": "{{base_url}}/health",
             "description": "No authentication. HTTP 200 means the API process responds."
           },
-          "event": [{
-            "listen": "test",
-            "script": {"type": "text/javascript", "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-              "pm.test('status is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));",
-              "pm.test('service name is returned', () => pm.expect(pm.response.json().service).to.be.a('string'));"
-            ]}
-          }],
-          "response": [{
-            "name": "200 OK",
-            "originalRequest": {"method": "GET", "header": [], "url": "{{base_url}}/health"},
-            "status": "OK",
-            "code": 200,
-            "_postman_previewlanguage": "json",
-            "header": [{"key": "content-type", "value": "application/json"}],
-            "cookie": [],
-            "body": "{\"status\":\"ok\",\"service\":\"Smart Agriculture Advisory and Market Linkage API\"}"
-          }]
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));",
+                  "pm.test('service name is returned', () => pm.expect(pm.response.json().service).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/health"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"status\":\"ok\",\"service\":\"Smart Agriculture Advisory and Market Linkage API\"}"
+            }
+          ]
         },
         {
           "name": "MongoDB readiness",
@@ -45,34 +66,1542 @@
             "url": "{{base_url}}/health/ready",
             "description": "No authentication. Returns 200 when MongoDB responds to ping or 503 when it is unavailable."
           },
-          "event": [{
-            "listen": "test",
-            "script": {"type": "text/javascript", "exec": [
-              "pm.test('MongoDB readiness status is explicit', () => pm.expect([200, 503]).to.include(pm.response.code));",
-              "if (pm.response.code === 200) pm.test('database connected', () => pm.expect(pm.response.json().database).to.eql('connected'));",
-              "if (pm.response.code === 503) pm.test('database unavailable is explicit', () => pm.expect(pm.response.json().detail.database).to.eql('unavailable'));"
-            ]}
-          }],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('MongoDB readiness status is explicit', () => pm.expect([200, 503]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) pm.test('database connected', () => pm.expect(pm.response.json().database).to.eql('connected'));",
+                  "if (pm.response.code === 503) pm.test('database unavailable is explicit', () => pm.expect(pm.response.json().detail.database).to.eql('unavailable'));"
+                ]
+              }
+            }
+          ],
           "response": [
             {
               "name": "200 MongoDB connected",
-              "originalRequest": {"method": "GET", "header": [], "url": "{{base_url}}/health/ready"},
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/health/ready"
+              },
               "status": "OK",
               "code": 200,
               "_postman_previewlanguage": "json",
-              "header": [{"key": "content-type", "value": "application/json"}],
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
               "cookie": [],
               "body": "{\"status\":\"ready\",\"database\":\"connected\"}"
             },
             {
               "name": "503 MongoDB unavailable",
-              "originalRequest": {"method": "GET", "header": [], "url": "{{base_url}}/health/ready"},
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{base_url}}/health/ready"
+              },
               "status": "Service Unavailable",
               "code": 503,
               "_postman_previewlanguage": "json",
-              "header": [{"key": "content-type", "value": "application/json"}],
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
               "cookie": [],
               "body": "{\"detail\":{\"status\":\"not_ready\",\"database\":\"unavailable\"}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register farmer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/register/farmer",
+            "description": "Public registration. Rerunning returns 409 for an already registered email or phone.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"{{farmer_name}}\",\n  \"email\": \"{{farmer_email}}\",\n  \"phone\": \"{{farmer_phone}}\",\n  \"password\": \"{{farmer_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created or duplicate on rerun', () => pm.expect([201,409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201) { const u=pm.response.json(); pm.expect(u.role).to.eql('FARMER'); pm.expect(u).not.to.have.property('password_hash'); pm.environment.set('farmer_id', u.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register buyer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/register/buyer",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"{{buyer_name}}\",\n  \"email\": \"{{buyer_email}}\",\n  \"phone\": \"{{buyer_phone}}\",\n  \"password\": \"{{buyer_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created or duplicate on rerun', () => pm.expect([201,409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201) { const u=pm.response.json(); pm.expect(u.role).to.eql('BUYER'); pm.environment.set('buyer_id', u.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bootstrap first admin (one time)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Bootstrap-Token",
+                "value": "{{admin_bootstrap_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/bootstrap-admin",
+            "description": "One-time setup. Set admin_bootstrap_token in the selected Postman environment from your private .env. Never publish that value.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"{{admin_name}}\",\n  \"email\": \"{{admin_email}}\",\n  \"phone\": \"{{admin_phone}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created once or correctly reports existing admin', () => pm.expect([201,409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201) { const u=pm.response.json(); pm.expect(u.role).to.eql('ADMIN'); pm.environment.set('admin_id',u.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login farmer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{farmer_email}}\",\n  \"password\": \"{{farmer_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+                  "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.expect(r.user).to.have.property('id'); pm.environment.set('access_token',r.access_token); pm.environment.set('farmer_id',r.user.id);",
+                  "pm.environment.set('farmer_access_token',r.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login buyer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{buyer_email}}\",\n  \"password\": \"{{buyer_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+                  "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.environment.set('access_token',r.access_token); pm.environment.set('buyer_id',r.user.id);",
+                  "pm.environment.set('buyer_access_token',r.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+                  "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.environment.set('access_token',r.access_token); pm.environment.set('admin_id',r.user.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid login (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody@example.test\",\n  \"password\": \"WrongPassword!234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid credentials return 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Current user",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/me",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Current user returned', () => pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json()).to.have.property('id'); pm.expect(pm.response.json()).not.to.have.property('password_hash');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Current user without token (negative test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/auth/me",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing token is rejected', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/me",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"{{updated_full_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Profile updated', () => pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().full_name).to.eql(pm.environment.get('updated_full_name'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin creates agricultural officer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/admin/users",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"{{officer_name}}\",\n  \"email\": \"{{officer_email}}\",\n  \"phone\": \"{{officer_phone}}\",\n  \"password\": \"{{officer_password}}\",\n  \"role\": \"AGRICULTURAL_OFFICER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin can create officer', () => pm.expect([201,409]).to.include(pm.response.code));",
+                  "if(pm.response.code===201) pm.expect(pm.response.json().role).to.eql('AGRICULTURAL_OFFICER');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List users (admin only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/admin/users?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('User page returned', () => pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array'); pm.expect(pm.response.json().total).to.be.a('number');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buyer forbidden from admin user list (negative test)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/admin/users",
+            "description": "First run Login buyer, then send this test after preserving buyer_access_token as described in README; the normal login request uses access_token for convenience."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wrong role is forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Public registration rejects role injection (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/register/buyer",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Injected Role\",\n  \"email\": \"injection@example.test\",\n  \"phone\": \"0711111111\",\n  \"password\": \"ValidPass!234\",\n  \"role\": \"ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Extra role field is rejected', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Farmers",
+      "item": [
+        {
+          "name": "Upsert my farmer profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farmers/me",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"county\": \"Kiambu\",\n  \"sub_county\": \"Limuru\",\n  \"location\": \"Ndeiya\",\n  \"farm_size_acres\": 2.5,\n  \"soil_type\": \"Clay loam\",\n  \"irrigation_available\": true,\n  \"crops_grown\": [\n    \"maize\",\n    \"beans\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farmer profile saved',()=>pm.response.to.have.status(200));",
+                  "const p=pm.response.json(); pm.expect(p.user_id).to.eql(pm.environment.get('farmer_id')); pm.expect(p.crops_grown).to.include('maize');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my farmer profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farmers/me",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farmer profile retrieved',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json()).to.have.property('farm_size_acres');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Buyers",
+      "item": [
+        {
+          "name": "Upsert my buyer profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/buyers/me",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"county\": \"Nairobi\",\n  \"sub_county\": \"Westlands\",\n  \"delivery_location\": \"Westlands, Nairobi\",\n  \"organization_name\": \"Local Produce Shop\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Buyer profile saved',()=>pm.response.to.have.status(200));",
+                  "const p=pm.response.json(); pm.expect(p.user_id).to.eql(pm.environment.get('buyer_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my buyer profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/buyers/me",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Buyer profile retrieved',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json()).to.have.property('delivery_location');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Farms",
+      "item": [
+        {
+          "name": "Create farm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farms",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Amina Demo Farm\",\n  \"county\": \"Kiambu\",\n  \"sub_county\": \"Limuru\",\n  \"location\": \"Ndeiya\",\n  \"size_acres\": 2.5,\n  \"soil_type\": \"Clay loam\",\n  \"irrigation_available\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farm created',()=>pm.response.to.have.status(201));",
+                  "const f=pm.response.json(); pm.expect(f.owner_id).to.eql(pm.environment.get('farmer_id')); pm.environment.set('farm_id',f.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my farms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farms?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farm page returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get created farm",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farms/{{farm_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farm retrieved',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().id).to.eql(pm.environment.get('farm_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update farm",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farms/{{farm_id}}",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size_acres\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farm updated',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().size_acres).to.eql(3);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buyer cannot create farm (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farms",
+            "description": "Login buyer first so access_token contains the buyer JWT.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Amina Demo Farm\",\n  \"county\": \"Kiambu\",\n  \"sub_county\": \"Limuru\",\n  \"location\": \"Ndeiya\",\n  \"size_acres\": 2.5,\n  \"soil_type\": \"Clay loam\",\n  \"irrigation_available\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Buyer role forbidden',()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Crops",
+      "item": [
+        {
+          "name": "Create crop",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crops",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"farm_id\": \"{{farm_id}}\",\n  \"name\": \"Maize\",\n  \"variety\": \"Hybrid demo\",\n  \"planting_date\": \"2026-03-01\",\n  \"expected_harvest_date\": \"2026-07-01\",\n  \"quantity\": 250,\n  \"quantity_unit\": \"kg\",\n  \"growth_information\": \"Vegetative stage\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Crop created',()=>pm.response.to.have.status(201));",
+                  "const c=pm.response.json(); pm.expect(c.farm_id).to.eql(pm.environment.get('farm_id')); pm.environment.set('crop_id',c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List crops in farm",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crops?farm_id={{farm_id}}&limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Crops page returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get created crop",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crops/{{crop_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Crop retrieved',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().id).to.eql(pm.environment.get('crop_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update crop growth and quantity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crops/{{crop_id}}",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 300,\n  \"growth_information\": \"Flowering\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Crop updated',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().quantity).to.eql(300);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid harvest date (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crops",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"farm_id\": \"{{farm_id}}\",\n  \"name\": \"Beans\",\n  \"planting_date\": \"2026-07-01\",\n  \"expected_harvest_date\": \"2026-06-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid date order rejected',()=>pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Marketplace",
+      "item": [
+        {
+          "name": "Create product listing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/marketplace/products",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_name\": \"White Maize\",\n  \"category\": \"Grains\",\n  \"description\": \"Dry, cleaned maize grains.\",\n  \"quantity_available\": 100,\n  \"unit\": \"kg\",\n  \"price_per_unit_kes\": 60,\n  \"county\": \"Kiambu\",\n  \"sub_county\": \"Limuru\",\n  \"product_images\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Listing created',()=>pm.response.to.have.status(201));",
+                  "const p=pm.response.json(); pm.expect(p.farmer_id).to.eql(pm.environment.get('farmer_id')); pm.environment.set('product_id',p.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Browse products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/marketplace/products?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Product list returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search and filter products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/marketplace/products?search=maize&county=Kiambu&category=Grains&min_price_kes=50&max_price_kes=100",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Filtered products returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/marketplace/products/{{product_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Product details returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().id).to.eql(pm.environment.get('product_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my product listings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/marketplace/products/mine?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('My listings returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product listing",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/marketplace/products/{{product_id}}",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_per_unit_kes\": 65\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Listing updated',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().price_per_unit_kes).to.eql(65);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buyer cannot create a listing (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/marketplace/products",
+            "description": "Login buyer first to use the buyer token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_name\": \"White Maize\",\n  \"category\": \"Grains\",\n  \"description\": \"Dry, cleaned maize grains.\",\n  \"quantity_available\": 100,\n  \"unit\": \"kg\",\n  \"price_per_unit_kes\": 60,\n  \"county\": \"Kiambu\",\n  \"sub_county\": \"Limuru\",\n  \"product_images\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Buyer forbidden',()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid price filter (negative test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/marketplace/products?min_price_kes=100&max_price_kes=10",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Inverted price range rejected',()=>pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate product listing",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/marketplace/products/{{product_id}}",
+            "description": "Run after completing orders that use this listing."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Listing deactivated',()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Place order and reserve inventory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"quantity\": 2,\n  \"delivery_information\": {\n    \"recipient_name\": \"Buyer One\",\n    \"recipient_phone\": \"0712345678\",\n    \"county\": \"Nairobi\",\n    \"sub_county\": \"Westlands\",\n    \"location\": \"Westlands, Nairobi\",\n    \"instructions\": \"Call on arrival\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Order created',()=>pm.response.to.have.status(201));",
+                  "const o=pm.response.json(); pm.expect(o.order_status).to.eql('AWAITING_PAYMENT'); pm.expect(o.payment_status).to.eql('UNPAID'); pm.expect(o.total_amount_kes).to.eql(o.quantity*o.unit_price_kes); pm.environment.set('order_id',o.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List buyer orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders/buyer?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Buyer orders returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List seller orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders/seller?limit=20&offset=0",
+            "description": "Run after logging in as the farmer/seller."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Seller orders returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my order",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Order returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().id).to.eql(pm.environment.get('order_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insufficient stock (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"quantity\": 2000000000,\n  \"delivery_information\": {\n    \"recipient_name\": \"Buyer One\",\n    \"recipient_phone\": \"0712345678\",\n    \"county\": \"Nairobi\",\n    \"sub_county\": \"Westlands\",\n    \"location\": \"Westlands, Nairobi\",\n    \"instructions\": \"Call on arrival\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Insufficient inventory rejected',()=>pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller cannot set PAID status (negative test)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}/status",
+            "description": "Use farmer token. PAID status is set only by verified payment callbacks in Phase 5.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_status\": \"PAID\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Seller cannot fabricate payment',()=>pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel unpaid order and release stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}/cancel",
+            "description": "Buyer only. Safe to retry: inventory release is idempotent."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unpaid order cancelled',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().order_status).to.eql('CANCELLED');"
+                ]
+              }
             }
           ]
         }

@@ -1,0 +1,21 @@
+from enum import Enum
+
+
+class OrderStatus(str, Enum):
+    PENDING = "PENDING"
+    AWAITING_PAYMENT = "AWAITING_PAYMENT"
+    PAID = "PAID"
+    PROCESSING = "PROCESSING"
+    READY_FOR_DELIVERY = "READY_FOR_DELIVERY"
+    IN_TRANSIT = "IN_TRANSIT"
+    DELIVERED = "DELIVERED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    DISPUTED = "DISPUTED"
+
+
+class PaymentStatus(str, Enum):
+    UNPAID = "UNPAID"
+    PAID = "PAID"
+    FAILED = "FAILED"
+    REFUNDED = "REFUNDED"
