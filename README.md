@@ -1,6 +1,6 @@
 # Smart Agriculture Advisory and Market Linkage API
 
-This FastAPI backend is being built in phases. **Phases 1 through 4 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings, and stock-reserving orders. Payment verification, escrow, delivery, disputes, weather/advisory, and disease detection are later phases.
+This FastAPI backend is being built in phases. **Phases 1 through 5 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, and an append-only transaction ledger. Delivery completion, disputes, weather/advisory, and disease detection are later phases.
 
 ## Requirements and installation
 
@@ -140,4 +140,61 @@ Orders start as `AWAITING_PAYMENT` with `UNPAID`. Buyers can cancel only in this
 4. Login farmer and inspect seller orders. The seller `PAID` negative request must return 409. The farmer and buyer tokens are stored separately in Postman, so switching login does not overwrite them.
 5. Cancel the unpaid order with the buyer token and repeat cancellation to exercise idempotent stock release. Do not mark payment successful manually; Phase 5 will add verified provider callbacks.
 
-The configured MongoDB is currently unavailable in this environment (the readiness endpoint returns `{"detail":{"status":"not_ready","database":"unavailable"}}`). The Phase 4 tests use isolated in-memory repositories and never claim to validate MongoDB runtime behavior. Start/restore MongoDB, then confirm `/health/ready` returns 200 before using the listing/order collection against a live database.
+The project runtime you reported returns MongoDB readiness as connected. In this agent execution environment, the configured Atlas hostname could not be resolved (`NoNameservers`), so live MongoDB integration could not be run here. The automated Phase 4 tests use isolated in-memory repositories; run the Postman workflow from the machine where `/health/ready` returns 200 to verify the real database.
+
+
+## Phase 5 payments, escrow workflow and financial ledger
+
+### Payment APIs
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| POST | `/payments/initiate` | BUYER, `Idempotency-Key` | Start STK Push for an owned unpaid order |
+| POST | `/payments/callback/daraja` | Public provider callback | Match pending checkout, check amount/phone, query Daraja status, then process callback |
+| POST | `/payments/mock/{payment_id}/callback` | Owning BUYER; development/test and mock provider only | Clearly marked simulation; never a real M-PESA payment |
+| GET | `/payments/{payment_id}` | Owning BUYER or ADMIN | Get payment status |
+| GET | `/payments/mine` | BUYER | Paginated buyer payment history |
+| GET | `/payments/admin/history` | ADMIN | Paginated platform payment history |
+| GET | `/payments/{payment_id}/provider-status` | Owning BUYER or ADMIN | Read-only provider status query; does not update local state |
+
+Payment initiation requires an order in `AWAITING_PAYMENT`/`UNPAID`, the buyer's own order, a Kenyan mobile number, and an idempotency key 8–128 characters. The amount is taken from the stored order total, never accepted from the request. An accepted STK Push only sets payment status to `INITIATED`; it does not mark the order paid. Payment processing requires a callback CheckoutRequestID matching a Daraja payment, integer callback amount equal to the payment/order amount, callback phone matching the submitted phone, receipt reference, and a Daraja STK Push Query response for the same checkout with the same result code. Failure callbacks also require provider query confirmation to prevent forged callbacks from cancelling an order's payment attempt. Replayed matching callbacks are idempotent; conflicting callbacks are rejected.
+
+Daraja OAuth uses `https://api.safaricom.co.ke/oauth/v1/generate` and production STK Push/STK Push Query use `https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest` and `/mpesa/stkpushquery/v1/query`, matching the production endpoint email supplied for this project. With `MPESA_ENVIRONMENT=sandbox`, the same paths use Safaricom's sandbox host. `MPESA_CALLBACK_URL` must be publicly reachable; production configuration requires HTTPS. Daraja does not sign the STK callback in this adapter, so the callback is not treated as proof by itself: it must pass the status query and payload correlation checks. Real Daraja requests require the consumer key/secret, shortcode, passkey and callback URL. Credentials are configured locally, but this backend remains set to `PAYMENT_PROVIDER=mock`/`MPESA_ENVIRONMENT=sandbox` and has no callback URL yet, so no Daraja request has been sent. Set `MPESA_CALLBACK_URL` to `https://<public-host>/payments/callback/daraja` only after the host is deployed or tunneled and reachable over HTTPS.
+
+`PAYMENT_PROVIDER=mock` is the default. The mock STK initiation returns a generated mock checkout reference and pending status. The separate mock callback endpoint is available only when `APP_ENV=development` or `test` and `PAYMENT_PROVIDER=mock`; a successful simulation is stored as provider `mock`, with a `MOCK-…` receipt and ledger status `MOCK_SIMULATED`. It is not presented as real M-PESA or proof of regulated custody. Set `PAYMENT_PROVIDER=daraja` to use the real adapter. Missing Daraja configuration returns an explicit service error, not fake success.
+
+### Escrow-style workflow (not legal custody)
+
+Payment confirmation creates an internal escrow workflow record with amount, configured commission, seller amount, status, provider and explicit `actual_funds_safeguarded`/`custody_status` values. With `ESCROW_PROVIDER=mock`, custody is `NOT_SAFEGUARDED` and no funds are held. A production safeguarded-funds partner requires an implementation of the partner adapter; selecting `ESCROW_PROVIDER=partner` without one fails closed. The application does not claim regulated escrow/custody.
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| GET | `/escrow/orders/{order_id}` | Buyer, seller or ADMIN | Find workflow by order |
+| GET | `/escrow/{escrow_id}` | Buyer, seller or ADMIN | Get workflow and custody status |
+| POST | `/escrow/{escrow_id}/release` | Owning FARMER or ADMIN | Request release; requires order `COMPLETED`, no unresolved dispute, and safeguarded funds for a real provider |
+| POST | `/escrow/{escrow_id}/refund-request` | Owning BUYER | Record a refund request; mock records a request only, not an actual refund |
+
+Release is blocked until Phase 6 implements delivery confirmation and moves an order to `COMPLETED`. A mock release records `SIMULATED_SETTLEMENT` and a `MOCK_SETTLEMENT_SIMULATED` ledger event; it does not record a confirmed seller payout or transfer money. Provider-confirmed settlement is the only path that records seller payout confirmation and platform commission. A provider error records `SETTLEMENT_FAILED` plus a payout-failed ledger event; the release can be retried with the same provider idempotency key.
+
+### Append-only transaction ledger
+
+`GET /transactions/orders/{order_id}/ledger` is available to the order buyer, seller, or ADMIN. Events are append-only and keyed idempotently. They record payment success/failure, safeguarding only when a provider confirms it, release request, seller settlement, commission, refund request/confirmation, and explicit mock simulation. Amounts use integer KES. There are no ledger update/delete operations.
+
+### Postman Phase 5 workflow
+
+1. Select the local environment and run Health; MongoDB readiness must return 200.
+2. Login farmer and buyer. Keep both tokens in their separate environment variables.
+3. Create a listing as farmer, then place an order as buyer; do not cancel it.
+4. Send **Initiate payment (mock or Daraja)**. In mock development, it returns `INITIATED` only. Use one saved `Idempotency-Key` when retrying the same order.
+5. For a development simulation, first try **Wrong amount mock callback** (409), then **Mock payment confirmation** (200), then **Duplicate mock callback** (200, no duplicate ledger event). For real Daraja, wait for Safaricom to call the public HTTPS callback and check the local payment/ledger endpoints; do not manually fabricate a success callback.
+6. Fetch payment and escrow status, then inspect the append-only order ledger. Mock mode must show `actual_funds_safeguarded: false` and provider `mock`.
+7. Seller release remains 409 until Phase 6 delivery completion. The Postman request explicitly checks this gate. Refund requests in mock mode only record a request; no refund occurs.
+
+## Testing payment and escrow logic
+
+```powershell
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
+python -m pytest -q
+```
+
+Phase 5 tests use in-memory repositories and provider fakes. They cover idempotent initiation/callbacks, failed and mismatched payments, Daraja checkout/amount/phone/result verification, production URL construction, private payment access, escrow commission arithmetic, dispute/delivery release gates, mock-only behavior and append-only ledger records. They do not call Safaricom or mutate MongoDB.

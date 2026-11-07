@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5d385b41-1830-4ecf-a160-81bfa9e4215f",
     "name": "Smart_Agriculture_API",
-    "description": "Health and Phase 2-4 authentication, farmer/buyer profiles, farm, crop, marketplace and order endpoints. Product browsing and stock reservation use MongoDB. Payment provider flows are not implemented until Phase 5.",
+    "description": "Phases 1-5 health, auth, profiles, marketplace, orders, Daraja STK payments, verified callbacks, mock-only payment simulation, escrow workflow, and append-only financial ledger. Daraja production credentials and a public HTTPS callback URL are required for actual M-PESA testing.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -269,6 +269,7 @@
                 "exec": [
                   "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
                   "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.expect(r.user).to.have.property('id'); pm.environment.set('access_token',r.access_token); pm.environment.set('farmer_id',r.user.id);",
+                  "pm.environment.set('farmer_access_token',r.access_token);",
                   "pm.environment.set('farmer_access_token',r.access_token);"
                 ]
               }
@@ -306,6 +307,8 @@
                 "exec": [
                   "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
                   "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.environment.set('access_token',r.access_token); pm.environment.set('buyer_id',r.user.id);",
+                  "pm.environment.set('buyer_access_token',r.access_token);",
+                  "pm.environment.set('buyer_access_token',r.access_token);",
                   "pm.environment.set('buyer_access_token',r.access_token);"
                 ]
               }
@@ -342,7 +345,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
-                  "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.environment.set('access_token',r.access_token); pm.environment.set('admin_id',r.user.id);"
+                  "const r=pm.response.json(); pm.expect(r.access_token).to.be.a('string').and.not.empty; pm.environment.set('access_token',r.access_token); pm.environment.set('admin_id',r.user.id);",
+                  "pm.environment.set('admin_access_token',r.access_token);"
                 ]
               }
             }
@@ -1600,6 +1604,527 @@
                 "exec": [
                   "pm.test('Unpaid order cancelled',()=>pm.response.to.have.status(200));",
                   "pm.expect(pm.response.json().order_status).to.eql('CANCELLED');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Initiate payment (mock or Daraja)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/initiate",
+            "description": "Requires the buyer token and an AWAITING_PAYMENT order. The Idempotency-Key prevents a retry from creating another charge. STK Push acceptance is not payment confirmation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"phone_number\": \"{{payment_phone}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const orderId=pm.environment.get('order_id'); if(pm.environment.get('last_payment_order_id')!==orderId){pm.environment.set('idempotency_key','pay-'+orderId+'-'+pm.variables.replaceIn('{{$guid}}'));pm.environment.set('last_payment_order_id',orderId);}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mock payment confirmation (development only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/mock/{{payment_id}}/callback",
+            "description": "Use only when PAYMENT_PROVIDER=mock and APP_ENV is development/test. This labels an internal payment simulation; it is not an M-PESA transaction.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"success\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mock callback accepted',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().status).to.eql('SUCCEEDED');pm.expect(pm.response.json().provider).to.eql('mock');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate mock callback (idempotency test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/mock/{{payment_id}}/callback",
+            "description": "Repeat the exact mock callback; it must not duplicate ledger entries.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"success\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Duplicate callback safe',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().status).to.eql('SUCCEEDED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong amount mock callback (negative test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/mock/{{payment_id}}/callback",
+            "description": "Run before confirming the successful mock callback, or create a fresh order/payment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"success\": true,\n  \"amount_kes\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Incorrect amount rejected',()=>pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Failed mock payment (negative workflow)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/mock/{{payment_id}}/callback",
+            "description": "Use a separate unpaid order/payment. This records a mock failure and does not mark its order paid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"success\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Failure recorded',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().status).to.eql('FAILED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My payment history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/mine?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payment history returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get payment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{payment_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payment retrieved',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().id).to.eql(pm.environment.get('payment_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Query provider status (read only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{payment_id}}/provider-status",
+            "description": "Queries Daraja STKPushQuery when configured. Does not mutate local payment or order status."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Provider query returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json()).to.have.property('local_status');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment hidden from another buyer (negative test)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{other_buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{other_buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{payment_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Other buyer denied',()=>pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin payment history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payments/admin/history?limit=20&offset=0",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin history returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Escrow",
+      "item": [
+        {
+          "name": "Get escrow by order",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/escrow/orders/{{order_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Escrow status returned',()=>pm.response.to.have.status(200));",
+                  "const e=pm.response.json();pm.environment.set('escrow_id',e.id);pm.expect(e.actual_funds_safeguarded).to.be.a('boolean');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get escrow by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/escrow/{{escrow_id}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Escrow retrieved',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().id).to.eql(pm.environment.get('escrow_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller release is blocked until delivery completion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/escrow/{{escrow_id}}/release",
+            "description": "Expected in Phase 5: no delivery-confirmation workflow exists until Phase 6. Unresolved disputes also block release."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Release waits for confirmed completion',()=>pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Request buyer refund review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/escrow/{{escrow_id}}/refund-request",
+            "description": "Buyer-only. Mock mode records a refund request but never transfers money.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Please review this order payment and advise on refund eligibility.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refund review request recorded',()=>pm.expect([200,409]).to.include(pm.response.code));",
+                  "if(pm.response.code===200) pm.expect(['REFUND_REQUESTED','PAYMENT_RECEIVED']).to.include(pm.response.json().status);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Order financial ledger",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/transactions/orders/{{order_id}}/ledger",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ledger returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');",
+                  "pm.response.json().items.forEach(e=>{pm.expect(e.currency).to.eql('KES');pm.expect(e.amount_kes%1).to.eql(0);});"
                 ]
               }
             }

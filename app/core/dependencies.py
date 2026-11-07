@@ -13,6 +13,11 @@ from app.repositories.farm_repository import FarmRepository
 from app.repositories.farmer_repository import FarmerRepository
 from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.payment_repository import PaymentRepository
+from app.repositories.escrow_repository import EscrowRepository
+from app.repositories.transaction_repository import TransactionLedgerRepository
+from app.services.escrow_providers import EscrowProvider, get_escrow_provider
+from app.services.payment_providers import PaymentProvider, get_payment_provider
 from app.schemas.user import UserPublic, to_public_user
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -51,6 +56,30 @@ def get_marketplace_repository() -> MarketplaceRepository:
 @lru_cache(maxsize=1)
 def get_order_repository() -> OrderRepository:
     return OrderRepository(get_database()["orders"])
+
+
+@lru_cache(maxsize=1)
+def get_payment_repository() -> PaymentRepository:
+    return PaymentRepository(get_database()["payments"])
+
+
+@lru_cache(maxsize=1)
+def get_escrow_repository() -> EscrowRepository:
+    db = get_database()
+    return EscrowRepository(db["escrow_transactions"], db["disputes"])
+
+
+@lru_cache(maxsize=1)
+def get_ledger_repository() -> TransactionLedgerRepository:
+    return TransactionLedgerRepository(get_database()["transaction_ledger"])
+
+
+def payment_provider() -> PaymentProvider:
+    return get_payment_provider()
+
+
+def escrow_provider() -> EscrowProvider:
+    return get_escrow_provider()
 
 
 def get_current_user(

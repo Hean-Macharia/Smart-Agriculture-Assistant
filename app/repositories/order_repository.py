@@ -21,6 +21,8 @@ class OrderRepository:
         result = public_document(document)
         for key in ("buyer_id", "seller_id", "product_id"):
             result[key] = str(result[key])
+        if result.get("payment_id") is not None:
+            result["payment_id"] = str(result["payment_id"])
         result.pop("_stock_reservation_released", None)
         return result
 
@@ -50,3 +52,23 @@ class OrderRepository:
                 return_document=ReturnDocument.AFTER,
             )
         )
+
+    def mark_paid(self, order_id: str, payment_id: str) -> dict | None:
+        updated = self.collection.find_one_and_update(
+            {"_id": ObjectId(order_id), "order_status": "AWAITING_PAYMENT", "payment_status": "UNPAID"},
+            {
+                "$set": {
+                    "order_status": "PAID",
+                    "payment_status": "PAID",
+                    "payment_id": ObjectId(payment_id),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        if updated:
+            return self._public(updated)
+        existing = self.collection.find_one({"_id": ObjectId(order_id)})
+        if existing and existing.get("order_status") == "PAID" and str(existing.get("payment_id")) == payment_id:
+            return self._public(existing)
+        return None

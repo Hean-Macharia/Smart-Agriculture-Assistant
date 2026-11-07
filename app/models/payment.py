@@ -1,0 +1,11 @@
+from enum import Enum
+
+
+class PaymentRecordStatus(str, Enum):
+    PENDING = "PENDING"
+    INITIATING = "INITIATING"
+    INITIATED = "INITIATED"
+    INITIATION_FAILED = "INITIATION_FAILED"
+    SUCCEEDED = "SUCCEEDED"
+    SUCCEEDED_REVIEW = "SUCCEEDED_REVIEW"
+    FAILED = "FAILED"

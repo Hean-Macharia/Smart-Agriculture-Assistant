@@ -29,13 +29,15 @@ class Settings(BaseSettings):
     mpesa_shortcode: str = ""
     mpesa_passkey: str = Field(default="", repr=False)
     mpesa_callback_url: str = ""
-    mpesa_environment: str = "sandbox"
+    mpesa_environment: Literal["sandbox", "production"] = "sandbox"
+    mpesa_transaction_type: Literal["CustomerPayBillOnline", "CustomerBuyGoodsOnline"] = "CustomerPayBillOnline"
 
     weather_api_key: str = Field(default="", repr=False)
     sms_api_key: str = Field(default="", repr=False)
 
-    payment_provider: str = "mock"
-    escrow_provider: str = "mock"
+    payment_provider: Literal["mock", "daraja"] = "mock"
+    escrow_provider: Literal["mock", "partner"] = "mock"
+    platform_commission_bps: int = Field(default=500, ge=0, le=10000)
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_ROOT / ".env",

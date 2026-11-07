@@ -16,6 +16,9 @@ from app.core.dependencies import (
     get_farmer_repository,
     get_marketplace_repository,
     get_order_repository,
+    get_escrow_repository,
+    get_ledger_repository,
+    get_payment_repository,
     get_user_repository,
 )
 from app.routes.auth import router as auth_router
@@ -26,6 +29,9 @@ from app.routes.farmers import router as farmers_router
 from app.routes.health import router as health_router
 from app.routes.marketplace import router as marketplace_router
 from app.routes.orders import router as orders_router
+from app.routes.payments import router as payments_router
+from app.routes.transactions import router as transactions_router
+from app.routes.escrow import router as escrow_router
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +46,16 @@ async def lifespan(_: FastAPI):
     get_crop_repository.cache_clear()
     get_marketplace_repository.cache_clear()
     get_order_repository.cache_clear()
+    get_payment_repository.cache_clear()
+    get_escrow_repository.cache_clear()
+    get_ledger_repository.cache_clear()
     close_mongo_connection()
 
 
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for agricultural advice and produce market linkage.",
-    version="0.4.0",
+    version="0.5.0",
     debug=settings.debug,
     lifespan=lifespan,
 )
@@ -58,6 +67,9 @@ app.include_router(farms_router)
 app.include_router(crops_router)
 app.include_router(marketplace_router)
 app.include_router(orders_router)
+app.include_router(payments_router)
+app.include_router(escrow_router)
+app.include_router(transactions_router)
 
 
 @app.exception_handler(PyMongoError)
