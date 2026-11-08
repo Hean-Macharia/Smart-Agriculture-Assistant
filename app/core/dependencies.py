@@ -18,8 +18,12 @@ from app.repositories.escrow_repository import EscrowRepository
 from app.repositories.transaction_repository import TransactionLedgerRepository
 from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.dispute_repository import DisputeRepository
+from app.repositories.advisory_repository import AdvisoryRepository
+from app.repositories.market_price_repository import MarketPriceRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.services.escrow_providers import EscrowProvider, get_escrow_provider
 from app.services.payment_providers import PaymentProvider, get_payment_provider
+from app.services.sms_providers import SmsProvider, get_sms_provider
 from app.schemas.user import UserPublic, to_public_user
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -86,12 +90,31 @@ def get_dispute_repository() -> DisputeRepository:
     return DisputeRepository(get_database()["disputes"])
 
 
+@lru_cache(maxsize=1)
+def get_advisory_repository() -> AdvisoryRepository:
+    return AdvisoryRepository(get_database()["advisories"])
+
+
+@lru_cache(maxsize=1)
+def get_market_price_repository() -> MarketPriceRepository:
+    return MarketPriceRepository(get_database()["market_prices"])
+
+
+@lru_cache(maxsize=1)
+def get_notification_repository() -> NotificationRepository:
+    return NotificationRepository(get_database()["notifications"])
+
+
 def payment_provider() -> PaymentProvider:
     return get_payment_provider()
 
 
 def escrow_provider() -> EscrowProvider:
     return get_escrow_provider()
+
+
+def sms_provider() -> SmsProvider:
+    return get_sms_provider()
 
 
 def get_current_user(

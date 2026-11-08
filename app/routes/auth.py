@@ -2,7 +2,7 @@
 
 import hmac
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_user_repository, require_roles
@@ -18,6 +18,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserListResponse, UserPublic, to_public_user
 from app.services.auth_service import InvalidCredentialsError, login_user, register_user
+from app.services.notification_service import dispatch_sms_event
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -38,10 +39,13 @@ def _conflict() -> HTTPException:
 )
 def register_farmer(
     payload: RegistrationRequest,
+    background_tasks: BackgroundTasks,
     users: UserRepository = Depends(get_user_repository),
 ) -> UserPublic:
     try:
-        return register_user(users, payload, UserRole.FARMER)
+        registered = register_user(users, payload, UserRole.FARMER)
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=registered.id, event="REGISTRATION", event_id=registered.id, message="Your Smart Agriculture farmer account is registered.")
+        return registered
     except UserConflictError:
         raise _conflict() from None
 
@@ -55,10 +59,13 @@ def register_farmer(
 )
 def register_buyer(
     payload: RegistrationRequest,
+    background_tasks: BackgroundTasks,
     users: UserRepository = Depends(get_user_repository),
 ) -> UserPublic:
     try:
-        return register_user(users, payload, UserRole.BUYER)
+        registered = register_user(users, payload, UserRole.BUYER)
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=registered.id, event="REGISTRATION", event_id=registered.id, message="Your Smart Agriculture buyer account is registered.")
+        return registered
     except UserConflictError:
         raise _conflict() from None
 

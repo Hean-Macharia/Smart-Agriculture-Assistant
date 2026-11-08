@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Response, status
 
 from app.core.dependencies import get_current_user, get_marketplace_repository, get_order_repository, require_roles
 from app.models.order import OrderStatus
@@ -9,6 +9,7 @@ from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.order_repository import OrderRepository
 from app.schemas.order import OrderCreate, OrderListResponse, OrderPublic, OrderStatusUpdate
 from app.schemas.user import UserPublic
+from app.services.notification_service import dispatch_sms_event
 from app.services.order_service import (
     OrderAccessError,
     OrderStateConflictError,
@@ -29,12 +30,17 @@ def _access_error() -> HTTPException:
 @router.post("", response_model=OrderPublic, status_code=status.HTTP_201_CREATED, summary="Place an order and reserve stock")
 def post_order(
     payload: OrderCreate,
+    background_tasks: BackgroundTasks,
     user: UserPublic = Depends(require_roles(UserRole.BUYER)),
     orders: OrderRepository = Depends(get_order_repository),
     products: MarketplaceRepository = Depends(get_marketplace_repository),
 ) -> OrderPublic:
     try:
-        return OrderPublic.model_validate(place_order(orders, products, user.id, payload))
+        order = OrderPublic.model_validate(place_order(orders, products, user.id, payload))
+        message = f"New order {order.id} was placed for {order.product_name}, quantity {order.quantity}."
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=order.seller_id, event="NEW_ORDER", event_id=order.id, message=message)
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=order.buyer_id, event="NEW_ORDER", event_id=order.id, message=f"Your order {order.id} was placed successfully.")
+        return order
     except StockUnavailableError:
         raise HTTPException(status_code=409, detail="Product is unavailable or has insufficient stock") from None
     except OrderAccessError:

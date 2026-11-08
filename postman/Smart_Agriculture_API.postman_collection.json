@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5d385b41-1830-4ecf-a160-81bfa9e4215f",
     "name": "Smart_Agriculture_API",
-    "description": "Phases 1-6: health, auth, profiles, marketplace, orders, verified Daraja STK payments, internal escrow workflow, delivery lifecycle, audited disputes, refund requests, seller payouts and append-only ledger. Development mock providers only simulate outcomes.",
+    "description": "Phases 1-7: authentication, farmer/buyer profiles, marketplace and orders, verified Daraja payments, escrow workflow, delivery/disputes/payouts, coordinate-based weather forecasts, advisory rules/history, market price observations/history, and an SMS adapter. Weather and production SMS require configured provider credentials. Mock SMS is explicitly simulated.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -510,7 +510,43 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Admin can create officer', () => pm.expect([201,409]).to.include(pm.response.code));",
-                  "if(pm.response.code===201) pm.expect(pm.response.json().role).to.eql('AGRICULTURAL_OFFICER');"
+                  "if(pm.response.code===201) pm.expect(pm.response.json().role).to.eql('AGRICULTURAL_OFFICER');",
+                  "if(pm.response.code===201) pm.environment.set('officer_id',pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login officer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "description": "Login the agricultural officer account created by the admin request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{officer_email}}\",\n  \"password\": \"{{officer_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Officer login succeeds',()=>pm.response.to.have.status(200));const r=pm.response.json();pm.environment.set('officer_access_token',r.access_token);pm.environment.set('officer_id',r.user.id);pm.expect(r.user.role).to.eql('AGRICULTURAL_OFFICER');"
                 ]
               }
             }
@@ -2092,6 +2128,453 @@
                 "exec": [
                   "pm.test('Refund review request recorded',()=>pm.expect([200,409]).to.include(pm.response.code));",
                   "if(pm.response.code===200) pm.expect(['REFUND_REQUESTED','PAYMENT_RECEIVED']).to.include(pm.response.json().status);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Market Prices",
+      "item": [
+        {
+          "name": "Add observed price",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/market-prices",
+            "description": "Agricultural officer/admin only. Fill observed_price_kes and price_date with a real measured observation and cite its source; no market values are bundled as facts.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"crop_name\": \"Maize\",\n  \"market_location\": \"{{market_location}}\",\n  \"county\": \"{{market_county}}\",\n  \"price_kes\": \"{{observed_price_kes}}\",\n  \"unit\": \"{{market_unit}}\",\n  \"date_collected\": \"{{price_date}}\",\n  \"data_source\": \"MANUAL\",\n  \"source_name\": \"{{market_source_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Price observation created',()=>pm.response.to.have.status(201));const p=pm.response.json();pm.environment.set('market_price_id',p.id);pm.expect(p.price_kes).to.be.a('number');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter observations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/market-prices?crop_name=Maize&county={{market_county}}&limit=20&offset=0",
+            "description": "Authenticated farmer, buyer, admin or officer can read recorded observations."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Paginated market prices',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Compare latest prices by market",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/market-prices/compare?crop_name=Maize&county={{market_county}}",
+            "description": "Returns the latest recorded observation for each market/location and unit. Empty items means there is no recorded data."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Comparison response',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get crop price history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/market-prices/history?crop_name=Maize&county={{market_county}}&limit=100",
+            "description": "Returns dated observations, preserving previous values."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Historical list response',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add correction/revision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/market-prices/{{market_price_id}}/revision",
+            "description": "Adds a new record linked with supersedes_id; it does not erase the original. Supply the corrected, verified amount and date.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_kes\": \"{{observed_price_kes}}\",\n  \"date_collected\": \"{{price_date}}\",\n  \"source_name\": \"{{market_source_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Revision created',()=>pm.response.to.have.status(201));pm.expect(pm.response.json().supersedes_id).to.eql(pm.environment.get('market_price_id'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Weather",
+      "item": [
+        {
+          "name": "Current weather and five-day forecast",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/weather/forecast?latitude={{latitude}}&longitude={{longitude}}",
+            "description": "Uses OpenWeatherMap current conditions and 5 day / 3 hour forecast. Requires WEATHER_API_KEY on the backend. Missing key/provider outage returns 503; no synthetic weather is returned."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Weather either returned or unavailable explicitly',()=>pm.expect([200,503]).to.include(pm.response.code));if(pm.response.code===200){const w=pm.response.json();pm.expect(w.current.temperature_c).to.be.a('number');pm.expect(w.forecast).to.be.an('array');}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Agricultural Advisory",
+      "item": [
+        {
+          "name": "Officer creates advisory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/advisories",
+            "description": "Agricultural officer/admin authored guidance; set crop_name and county to target it, or leave them null to make it general.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"County planting information\",\n  \"message\": \"Contact your county agricultural extension officer for current, location-specific planting dates and crop guidance.\",\n  \"crop_name\": \"Maize\",\n  \"county\": \"Nakuru\",\n  \"source_name\": \"{{advisory_source_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Officer advisory created',()=>pm.response.to.have.status(201));pm.environment.set('advisory_id',pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Farmer lists relevant advisories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/advisories?crop_name=Maize&county={{market_county}}&limit=20",
+            "description": "Shows active officer advisories matching the crop/county and the current farmer weather recommendation history."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Advisory list response',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Generate farm/crop weather guidance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/advisories/recommendations/weather",
+            "description": "Requires owned farm and crop IDs plus WEATHER_API_KEY. Creates history tied to that farm/crop. Heuristics are prompts to check soil/weather, not guaranteed agronomic advice.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"farm_id\": \"{{farm_id}}\",\n  \"crop_id\": \"{{crop_id}}\",\n  \"latitude\": \"{{latitude}}\",\n  \"longitude\": \"{{longitude}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Recommendation stored or weather unavailable',()=>pm.expect([201,503]).to.include(pm.response.code));if(pm.response.code===201){const a=pm.response.json();pm.expect(a.farm_id).to.eql(pm.environment.get('farm_id'));pm.expect(a.rules_applied).to.be.an('array');}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My recommendation history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/advisories/mine?limit=20&offset=0",
+            "description": "Farmer-only history of generated weather prompts."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Recommendation history response',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Officer edits or deactivates advisory",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/advisories/{{advisory_id}}",
+            "description": "Only the authoring officer or admin may manage this record.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Advisory updated',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().is_active).to.eql(false);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Send event SMS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{sms_idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/notifications/send",
+            "description": "Admin/officer operation to a registered account. EVENT can be REGISTRATION, NEW_ORDER, PAYMENT_CONFIRMATION, DELIVERY_UPDATE, DISPUTE_UPDATE, SELLER_PAYOUT, or AGRICULTURAL_ADVISORY. In mock development, status is SIMULATED and no SMS is sent. HTTP gateway success means accepted, not handset delivery.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient_user_id\": \"{{buyer_id}}\",\n  \"event\": \"NEW_ORDER\",\n  \"message\": \"A new order update is available in your Smart Agriculture account.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Notification attempt has explicit outcome',()=>pm.expect([200,403,404,409,502,503]).to.include(pm.response.code));if([200,502].includes(pm.response.code))pm.expect(['SIMULATED','ACCEPTED','FAILED']).to.include(pm.response.json().notification.status);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my notification attempts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/notifications/mine?limit=20&offset=0",
+            "description": "Returns only notifications addressed to this authenticated user."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Notification history response',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
                 ]
               }
             }

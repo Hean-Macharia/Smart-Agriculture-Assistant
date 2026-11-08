@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, status
 
 from app.core.dependencies import get_current_user, get_dispute_repository, get_order_repository, require_roles
 from app.models.dispute import DisputeStatus
@@ -10,6 +10,7 @@ from app.repositories.order_repository import OrderRepository
 from app.schemas.dispute import DisputeCreate, DisputeListResponse, DisputePublic, DisputeReview
 from app.schemas.user import UserPublic
 from app.services.dispute_service import DisputeAccessError, DisputeStateError, create_dispute, review_dispute
+from app.services.notification_service import dispatch_sms_event
 
 router = APIRouter(prefix="/disputes", tags=["Disputes"])
 DisputeId = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{24}$")]
@@ -20,13 +21,17 @@ def _not_found():
 
 
 @router.post("", response_model=DisputePublic, status_code=status.HTTP_201_CREATED, summary="Open a dispute for a paid order")
-def post_dispute(payload: DisputeCreate, user: UserPublic = Depends(get_current_user), disputes: DisputeRepository = Depends(get_dispute_repository), orders: OrderRepository = Depends(get_order_repository)):
+def post_dispute(payload: DisputeCreate, background_tasks: BackgroundTasks, user: UserPublic = Depends(get_current_user), disputes: DisputeRepository = Depends(get_dispute_repository), orders: OrderRepository = Depends(get_order_repository)):
     if user.role not in {UserRole.BUYER, UserRole.FARMER}:
         raise HTTPException(status_code=403, detail="Buyer or farmer role required")
     values = payload.model_dump()
     values["evidence_urls"] = [str(url) for url in payload.evidence_urls]
     try:
-        return DisputePublic.model_validate(create_dispute(order_id=payload.order_id, user_id=user.id, values=values, disputes=disputes, orders=orders))
+        dispute = DisputePublic.model_validate(create_dispute(order_id=payload.order_id, user_id=user.id, values=values, disputes=disputes, orders=orders))
+        other_party = dispute.seller_id if user.id == dispute.buyer_id else dispute.buyer_id
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=other_party, event="DISPUTE_UPDATE", event_id=f"{dispute.id}:OPEN:{other_party}", message=f"A dispute was opened for order {dispute.order_id}.")
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=user.id, event="DISPUTE_UPDATE", event_id=f"{dispute.id}:OPEN:{user.id}", message=f"Your dispute for order {dispute.order_id} was recorded.")
+        return dispute
     except DisputeAccessError:
         raise HTTPException(status_code=404, detail="Order not found") from None
     except DisputeStateError as exc:
@@ -56,9 +61,11 @@ def get_dispute(dispute_id: DisputeId, user: UserPublic = Depends(get_current_us
 
 
 @router.patch("/{dispute_id}/review", response_model=DisputePublic, summary="Record an audited administrator dispute decision")
-def patch_review(dispute_id: DisputeId, payload: DisputeReview, user: UserPublic = Depends(require_roles(UserRole.ADMIN)), disputes: DisputeRepository = Depends(get_dispute_repository), orders: OrderRepository = Depends(get_order_repository)):
+def patch_review(dispute_id: DisputeId, payload: DisputeReview, background_tasks: BackgroundTasks, user: UserPublic = Depends(require_roles(UserRole.ADMIN)), disputes: DisputeRepository = Depends(get_dispute_repository), orders: OrderRepository = Depends(get_order_repository)):
     try:
         item = review_dispute(dispute_id=dispute_id, admin_id=user.id, status=payload.status, decision=payload.decision, resolution=payload.resolution, disputes=disputes, orders=orders)
+        for recipient_id in (item["buyer_id"], item["seller_id"]):
+            background_tasks.add_task(dispatch_sms_event, recipient_user_id=recipient_id, event="DISPUTE_UPDATE", event_id=f"{item['id']}:{item['status']}:{recipient_id}", message=f"Dispute for order {item['order_id']} status is now {item['status']}.")
         return DisputePublic.model_validate(item)
     except DisputeAccessError:
         raise _not_found() from None

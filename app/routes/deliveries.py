@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, status
 
 from app.core.dependencies import get_current_user, get_delivery_repository, get_order_repository, require_roles
 from app.models.user import UserRole
@@ -9,6 +9,7 @@ from app.repositories.order_repository import OrderRepository
 from app.schemas.delivery import DeliveryCreate, DeliveryListResponse, DeliveryPublic, DeliveryStatusUpdate
 from app.schemas.user import UserPublic
 from app.services.delivery_service import DeliveryAccessError, DeliveryStateError, confirm_delivery, create_delivery, update_delivery
+from app.services.notification_service import dispatch_sms_event
 
 router = APIRouter(prefix="/deliveries", tags=["Deliveries"])
 DeliveryId = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{24}$")]
@@ -47,11 +48,13 @@ def get_delivery(delivery_id: DeliveryId, user: UserPublic = Depends(get_current
 
 
 @router.patch("/{delivery_id}/status", response_model=DeliveryPublic, summary="Seller or admin updates delivery progress")
-def patch_delivery(delivery_id: DeliveryId, payload: DeliveryStatusUpdate, user: UserPublic = Depends(get_current_user), deliveries: DeliveryRepository = Depends(get_delivery_repository), orders: OrderRepository = Depends(get_order_repository)):
+def patch_delivery(delivery_id: DeliveryId, payload: DeliveryStatusUpdate, background_tasks: BackgroundTasks, user: UserPublic = Depends(get_current_user), deliveries: DeliveryRepository = Depends(get_delivery_repository), orders: OrderRepository = Depends(get_order_repository)):
     if user.role not in {UserRole.FARMER, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Farmer or administrator role required")
     try:
-        return DeliveryPublic.model_validate(update_delivery(delivery_id=delivery_id, actor_id=user.id, is_admin=user.role == UserRole.ADMIN, target=payload.status, note=payload.note, deliveries=deliveries, orders=orders))
+        delivery = DeliveryPublic.model_validate(update_delivery(delivery_id=delivery_id, actor_id=user.id, is_admin=user.role == UserRole.ADMIN, target=payload.status, note=payload.note, deliveries=deliveries, orders=orders))
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=delivery.buyer_id, event="DELIVERY_UPDATE", event_id=f"{delivery.id}:{delivery.status.value}", message=f"Delivery for order {delivery.order_id} is now {delivery.status.value}.")
+        return delivery
     except DeliveryAccessError:
         raise _not_found() from None
     except DeliveryStateError as exc:
@@ -59,9 +62,11 @@ def patch_delivery(delivery_id: DeliveryId, payload: DeliveryStatusUpdate, user:
 
 
 @router.post("/{delivery_id}/confirm", response_model=DeliveryPublic, summary="Buyer confirms receipt and completes the order")
-def post_confirm(delivery_id: DeliveryId, user: UserPublic = Depends(require_roles(UserRole.BUYER)), deliveries: DeliveryRepository = Depends(get_delivery_repository), orders: OrderRepository = Depends(get_order_repository)):
+def post_confirm(delivery_id: DeliveryId, background_tasks: BackgroundTasks, user: UserPublic = Depends(require_roles(UserRole.BUYER)), deliveries: DeliveryRepository = Depends(get_delivery_repository), orders: OrderRepository = Depends(get_order_repository)):
     try:
-        return DeliveryPublic.model_validate(confirm_delivery(delivery_id=delivery_id, buyer_id=user.id, deliveries=deliveries, orders=orders))
+        delivery = DeliveryPublic.model_validate(confirm_delivery(delivery_id=delivery_id, buyer_id=user.id, deliveries=deliveries, orders=orders))
+        background_tasks.add_task(dispatch_sms_event, recipient_user_id=delivery.seller_id, event="DELIVERY_UPDATE", event_id=f"{delivery.id}:{delivery.status.value}", message=f"Buyer confirmed delivery for order {delivery.order_id}.")
+        return delivery
     except DeliveryAccessError:
         raise _not_found() from None
     except DeliveryStateError as exc:

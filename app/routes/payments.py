@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Query, Request, status
 
 from app.core.config import settings
 from app.core.dependencies import (
@@ -32,6 +32,7 @@ from app.services.payment_service import (
     process_daraja_callback,
     process_mock_callback,
 )
+from app.services.notification_service import dispatch_sms_event
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 PaymentId = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{24}$")]
@@ -72,6 +73,7 @@ def post_initiate_payment(
 @router.post("/callback/daraja", summary="Daraja STK Push callback")
 async def daraja_callback(
     request: Request,
+    background_tasks: BackgroundTasks,
     payments: PaymentRepository = Depends(get_payment_repository),
     orders: OrderRepository = Depends(get_order_repository),
     ledger: TransactionLedgerRepository = Depends(get_ledger_repository),
@@ -88,6 +90,9 @@ async def daraja_callback(
             callback=callback, payments=payments, orders=orders,
             ledger=ledger, escrow_repo=escrows, escrow_provider=safeguarding_provider, provider=provider,
         )
+        payment = result.get("payment") or {}
+        if payment.get("status") == "SUCCEEDED":
+            background_tasks.add_task(dispatch_sms_event, recipient_user_id=payment["buyer_id"], event="PAYMENT_CONFIRMATION", event_id=payment["id"], message=f"Payment for order {payment['order_id']} was confirmed.")
         return {key: result[key] for key in ("accepted", "result_code", "result_description")}
     except PaymentVerificationError as exc:
         # A retryable verification failure receives 503 so Daraja/callback forwarding can retry.
@@ -102,6 +107,7 @@ async def daraja_callback(
 def mock_callback(
     payment_id: PaymentId,
     payload: MockCallbackSimulation,
+    background_tasks: BackgroundTasks,
     user: UserPublic = Depends(require_roles(UserRole.BUYER)),
     payments: PaymentRepository = Depends(get_payment_repository),
     orders: OrderRepository = Depends(get_order_repository),
@@ -117,6 +123,9 @@ def mock_callback(
             amount_kes=payload.amount_kes, payments=payments, orders=orders,
             ledger=ledger, escrow_repo=escrows, escrow_provider=safeguarding_provider,
         )
+        payment = result.get("payment") or {}
+        if payment.get("status") == "SUCCEEDED":
+            background_tasks.add_task(dispatch_sms_event, recipient_user_id=payment["buyer_id"], event="PAYMENT_CONFIRMATION", event_id=payment["id"], message=f"Payment for order {payment['order_id']} was confirmed in the development simulation.")
         return PaymentPublic.model_validate(result["payment"])
     except PaymentAccessError:
         raise _not_found() from None

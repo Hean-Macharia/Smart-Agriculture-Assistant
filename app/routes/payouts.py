@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path
 
 from app.core.config import settings
 from app.core.dependencies import escrow_provider, get_current_user, get_escrow_repository, get_ledger_repository, get_order_repository, require_roles
@@ -13,6 +13,7 @@ from app.schemas.user import UserPublic
 from app.services.escrow_providers import EscrowProvider, EscrowProviderError
 from app.services.escrow_service import EscrowAccessError, EscrowStateError
 from app.services.payout_service import request_payout
+from app.services.notification_service import dispatch_sms_event
 
 router = APIRouter(prefix="/payouts", tags=["Payouts"])
 EscrowId = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{24}$")]
@@ -30,11 +31,15 @@ def payout_status(escrow_id: EscrowId, user: UserPublic = Depends(get_current_us
 
 
 @router.post("/{escrow_id}/release", response_model=EscrowActionResponse, summary="Request payout after delivery confirmation")
-def release_payout(escrow_id: EscrowId, user: UserPublic = Depends(require_roles(UserRole.FARMER, UserRole.ADMIN)), escrows: EscrowRepository = Depends(get_escrow_repository), orders: OrderRepository = Depends(get_order_repository), ledger: TransactionLedgerRepository = Depends(get_ledger_repository), provider: EscrowProvider = Depends(escrow_provider)):
+def release_payout(escrow_id: EscrowId, background_tasks: BackgroundTasks, user: UserPublic = Depends(require_roles(UserRole.FARMER, UserRole.ADMIN)), escrows: EscrowRepository = Depends(get_escrow_repository), orders: OrderRepository = Depends(get_order_repository), ledger: TransactionLedgerRepository = Depends(get_ledger_repository), provider: EscrowProvider = Depends(escrow_provider)):
     if settings.escrow_provider == "mock" and settings.app_env.lower() not in {"development", "test"}:
         raise HTTPException(status_code=503, detail="Mock settlement is disabled outside development/test")
     try:
         escrow, message = request_payout(escrow_id=escrow_id, seller_id=user.id, escrows=escrows, orders=orders, ledger=ledger, provider=provider, is_admin=user.role == UserRole.ADMIN)
+        if escrow["status"] in {"SETTLED", "SIMULATED_SETTLEMENT"}:
+            order = orders.get(escrow["order_id"])
+            if order:
+                background_tasks.add_task(dispatch_sms_event, recipient_user_id=order["seller_id"], event="SELLER_PAYOUT", event_id=escrow_id, message=f"Payout status for order {order['id']} is {escrow['status']}.")
         return EscrowActionResponse(status=escrow["status"], message=message, escrow=EscrowPublic.model_validate(escrow))
     except EscrowAccessError:
         raise HTTPException(status_code=404, detail="Payout not found") from None

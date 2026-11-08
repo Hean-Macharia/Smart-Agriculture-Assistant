@@ -34,9 +34,13 @@ class Settings(BaseSettings):
 
     weather_api_key: str = Field(default="", repr=False)
     sms_api_key: str = Field(default="", repr=False)
+    sms_api_url: str = ""
+    sms_sender_id: str = ""
+    sms_auto_dispatch: bool = False
 
     payment_provider: Literal["mock", "daraja"] = "mock"
     escrow_provider: Literal["mock", "partner"] = "mock"
+    sms_provider: Literal["mock", "http"] = "mock"
     platform_commission_bps: int = Field(default=500, ge=0, le=10000)
 
     model_config = SettingsConfigDict(

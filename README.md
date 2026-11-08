@@ -1,6 +1,6 @@
 # Smart Agriculture Advisory and Market Linkage API
 
-This FastAPI backend is being built in phases. **Phases 1 through 6 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, an append-only transaction ledger, delivery tracking, dispute review, refund request recording, and payout status/release handling. Weather/advisory, market prices, SMS, and disease detection are later phases.
+This FastAPI backend is being built in phases. **Phases 1 through 7 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, an append-only transaction ledger, delivery tracking, dispute review, refund request recording, payout status/release handling, weather forecasts, farm-linked weather guidance, market price records/history, and SMS adapter operations. Machine-learning disease detection is a later phase.
 
 ## Requirements and installation
 
@@ -246,3 +246,53 @@ python -m pytest -q
 ```
 
 Phase 6 API tests use in-memory repositories and do not contact MongoDB or external payment providers. They check the delivery lifecycle, role/ownership restrictions, buyer confirmation, dispute authorization, audit entries, duplicate dispute protection, and invalid decisions. Swagger UI is available at `/docs` when the server is running.
+
+
+## Phase 7 weather, agricultural advisory, market prices and SMS
+
+### Weather and agricultural advisory APIs
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| GET | `/weather/forecast?latitude=...&longitude=...` | FARMER, AGRICULTURAL_OFFICER, ADMIN | Current conditions plus five-day three-hour forecast; requires `WEATHER_API_KEY` |
+| POST | `/advisories` | AGRICULTURAL_OFFICER or ADMIN | Publish crop/county scoped or general officer guidance with a stated source |
+| GET | `/advisories?crop_name=...&county=...` | FARMER, officer, admin | Farmer sees matching active advisories plus their own generated weather prompts |
+| GET | `/advisories/mine` | FARMER | Paginated farm-linked recommendation history |
+| POST | `/advisories/recommendations/weather` | FARMER | Fetch forecast and store transparent weather rules for an owned farm and crop |
+| PATCH | `/advisories/{advisory_id}` | Authoring officer or ADMIN | Edit or deactivate an officer-authored advisory |
+
+Weather uses OpenWeatherMap current conditions and its 5 day / 3 hour forecast API. Coordinates are supplied by the caller because existing farm records do not contain GPS coordinates. The weather provider key is required; missing configuration and provider failures return 503 without fabricated weather. See the [current weather API documentation](https://openweathermap.org/api/current) and [5 day forecast API documentation](https://openweathermap.org/api/forecast5).
+
+Weather recommendations are rule-based prompts, saved with the crop, farm, provider snapshot, and rules applied. The implemented rainfall rules ask farmers to check soil moisture/crop stage when forecast rainfall is low, or monitor drainage when it is high. They do not prescribe planting dates, irrigation volumes, pesticides, or guaranteed outcomes; farmers are directed to confirm decisions with county extension staff.
+
+### Market price APIs
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| POST | `/market-prices` | AGRICULTURAL_OFFICER or ADMIN | Record an observed price, unit, collection date, source type, and source name |
+| GET | `/market-prices` | Authenticated farmer, buyer, officer, admin | Filter and paginate recorded observations |
+| GET | `/market-prices/history?crop_name=...` | Authenticated user | Retrieve dated price history |
+| GET | `/market-prices/compare?crop_name=...&county=...` | Authenticated user | Compare latest recorded observation by market, county, and unit |
+| POST | `/market-prices/{price_id}/revision` | AGRICULTURAL_OFFICER or ADMIN | Append a correction linked to its prior record; old history stays intact |
+
+There is no automatic market price feed in this phase. API records must come from an actual survey or named external source; do not treat Postman placeholders as Kenyan market prices. Prices are integer KES and include source metadata.
+
+### SMS APIs and configuration
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| POST | `/notifications/send` | AGRICULTURAL_OFFICER or ADMIN | Send a supplied event message to a registered user; requires `Idempotency-Key` |
+| GET | `/notifications/mine` | Authenticated user | Paginated notification attempt history for that user |
+
+Supported event labels are `REGISTRATION`, `NEW_ORDER`, `PAYMENT_CONFIRMATION`, `DELIVERY_UPDATE`, `DISPUTE_UPDATE`, `SELLER_PAYOUT`, and `AGRICULTURAL_ADVISORY`. An officer/admin can send an event message directly. Domain routes also queue event SMS for registration, new orders, verified payment, delivery, dispute, payout, and farmer weather guidance when `SMS_AUTO_DISPATCH=true`; background dispatch is best-effort and does not roll back the business operation. It defaults to false. The SMS history records accepted/simulated/failed attempts.
+
+`SMS_PROVIDER=mock` is development/test simulation only and production mock sending returns 503. Set `SMS_AUTO_DISPATCH=true` to enable the domain event hooks; automatic sends are off by default. `SMS_PROVIDER=http` uses the configurable generic JSON/Bearer adapter: set `SMS_API_URL`, `SMS_API_KEY`, and optional `SMS_SENDER_ID` to match a gateway that supports `{to, message, sender_id}` and the `Idempotency-Key` header. Gateway HTTP acceptance is stored as `ACCEPTED`; it is not proof that the recipient handset received the message. Provider errors are stored as `FAILED`; API keys and recipient phone numbers are not returned in notification history.
+
+### Phase 7 Postman workflow and tests
+
+1. Configure `WEATHER_API_KEY` in the backend environment to use weather endpoints. The Postman request checks for either a valid forecast or explicit 503 when the provider is unavailable.
+2. Bootstrap/login admin, create the officer account, and run **Login officer**.
+3. Create an advisory as officer; login as farmer and filter by crop and county. For weather prompts, use a farmer-owned farm/crop and coordinate values.
+4. Enter a real observed market price, collection date, location, unit, and source in the Postman environment before running **Add observed price**. Exercise filters, comparison, history, and a revision.
+5. In development with `SMS_PROVIDER=mock`, run **Send event SMS** and confirm `SIMULATED`. For a live gateway, configure `SMS_PROVIDER=http` and its credentials; successful API response means accepted, not delivered.
+6. `python -m pytest -q` runs isolated tests using fake weather/SMS providers and in-memory repositories; tests do not call external providers or production MongoDB.
