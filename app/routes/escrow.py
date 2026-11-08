@@ -81,7 +81,7 @@ def release_escrow(
     try:
         escrow, message = request_seller_release(
             escrow_id=escrow_id, seller_id=user.id, escrows=escrows,
-            orders=orders, ledger=ledger, provider=provider,
+            orders=orders, ledger=ledger, provider=provider, is_admin=user.role == UserRole.ADMIN,
         )
         return EscrowActionResponse(status=escrow["status"], message=message, escrow=EscrowPublic.model_validate(escrow))
     except EscrowAccessError:

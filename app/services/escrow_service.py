@@ -30,12 +30,13 @@ def _ledger(ledger, escrow, event_type, amount, reference, status, suffix=""):
 def request_seller_release(
     *, escrow_id: str, seller_id: str, escrows: EscrowRepository,
     orders: OrderRepository, ledger: TransactionLedgerRepository, provider: EscrowProvider,
+    is_admin: bool = False,
 ) -> tuple[dict, str]:
     escrow = escrows.get(escrow_id)
     if escrow is None:
         raise EscrowAccessError
     order = orders.get(escrow["order_id"])
-    if order is None or order["seller_id"] != seller_id:
+    if order is None or not is_admin and order["seller_id"] != seller_id:
         raise EscrowAccessError
     if escrows.has_unresolved_dispute(order["id"]):
         raise EscrowStateError("Payment cannot be released while a dispute is unresolved")

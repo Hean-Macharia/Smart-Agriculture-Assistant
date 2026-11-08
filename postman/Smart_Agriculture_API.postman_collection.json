@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5d385b41-1830-4ecf-a160-81bfa9e4215f",
     "name": "Smart_Agriculture_API",
-    "description": "Phases 1-5 health, auth, profiles, marketplace, orders, Daraja STK payments, verified callbacks, mock-only payment simulation, escrow workflow, and append-only financial ledger. Daraja production credentials and a public HTTPS callback URL are required for actual M-PESA testing.",
+    "description": "Phases 1-6: health, auth, profiles, marketplace, orders, verified Daraja STK payments, internal escrow workflow, delivery lifecycle, audited disputes, refund requests, seller payouts and append-only ledger. Development mock providers only simulate outcomes.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -2125,6 +2125,458 @@
                   "pm.test('Ledger returned',()=>pm.response.to.have.status(200));",
                   "pm.expect(pm.response.json().items).to.be.an('array');",
                   "pm.response.json().items.forEach(e=>{pm.expect(e.currency).to.eql('KES');pm.expect(e.amount_kes%1).to.eql(0);});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Deliveries",
+      "item": [
+        {
+          "name": "Create delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/orders/{{order_id}}",
+            "description": "Seller-only. Order must be READY_FOR_DELIVERY.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carrier_name\": \"Local courier\",\n  \"carrier_phone\": \"0712345678\",\n  \"tracking_reference\": \"TEST-TRACK-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery created',()=>pm.response.to.have.status(201));",
+                  "const d=pm.response.json();pm.environment.set('delivery_id',d.id);pm.expect(d.status).to.eql('PENDING');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller marks picked up",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
+            "description": "Seller progress update.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PICKED_UP\",\n  \"note\": \"Collected from farm\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Picked up',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('PICKED_UP');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller marks in transit",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
+            "description": "Seller progress update.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_TRANSIT\",\n  \"note\": \"On the way\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('In transit',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('IN_TRANSIT');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller marks delivered",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
+            "description": "Seller records delivery; this does not complete the order until buyer confirmation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DELIVERED\",\n  \"note\": \"Delivered to recipient\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivered',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('DELIVERED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buyer confirms delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/confirm",
+            "description": "Buyer-only; completes the order after seller marks it delivered."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery confirmed',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('CONFIRMED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/mine?limit=20&offset=0",
+            "description": "Buyer or farmer; returns only the current user’s deliveries."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery list',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Disputes",
+      "item": [
+        {
+          "name": "Buyer opens dispute",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes",
+            "description": "Open only one dispute for a paid order; do this before buyer confirmation if the order is ready for delivery.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"reason\": \"DAMAGED_PRODUCE\",\n  \"description\": \"The produce arrived damaged and requires review.\",\n  \"evidence_urls\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dispute opened',()=>pm.response.to.have.status(201));const d=pm.response.json();pm.environment.set('dispute_id',d.id);pm.expect(d.status).to.eql('OPEN');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my disputes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes/mine?limit=20&offset=0",
+            "description": "Participant-only dispute list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dispute list',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin lists disputes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes?limit=20&offset=0",
+            "description": "Admin-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin dispute list',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin starts review",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes/{{dispute_id}}/review",
+            "description": "Admin-only. Every review action is appended to the dispute decision audit trail.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"resolution\": \"Reviewing submitted evidence and the other participant response.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Review started',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().decisions).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin resolves dispute",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes/{{dispute_id}}/review",
+            "description": "Admin-only. REFUND_BUYER is a decision record; it does not itself move funds. Use the escrow refund request and a configured provider for an actual refund.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"RESOLVED\",\n  \"decision\": \"REFUND_BUYER\",\n  \"resolution\": \"Refund approved for processing through the configured payment provider.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dispute resolved',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('RESOLVED');pm.expect(pm.response.json().decisions.length).to.be.greaterThan(1);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Payouts",
+      "item": [
+        {
+          "name": "Get payout and escrow status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payouts/{{escrow_id}}",
+            "description": "Participant or admin."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payout status visible',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().seller_amount_kes).to.be.a('number');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Request seller payout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/payouts/{{escrow_id}}/release",
+            "description": "Requires buyer delivery confirmation and no unresolved disputes. In development, mock mode records SIMULATED_SETTLEMENT only; it never transfers funds. A real provider must confirm payout."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payout outcome is explicit',()=>pm.expect([200,409,503]).to.include(pm.response.code));if(pm.response.code===200)pm.expect(['SIMULATED_SETTLEMENT','SETTLED']).to.include(pm.response.json().status);"
                 ]
               }
             }

@@ -16,6 +16,8 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.escrow_repository import EscrowRepository
 from app.repositories.transaction_repository import TransactionLedgerRepository
+from app.repositories.delivery_repository import DeliveryRepository
+from app.repositories.dispute_repository import DisputeRepository
 from app.services.escrow_providers import EscrowProvider, get_escrow_provider
 from app.services.payment_providers import PaymentProvider, get_payment_provider
 from app.schemas.user import UserPublic, to_public_user
@@ -72,6 +74,16 @@ def get_escrow_repository() -> EscrowRepository:
 @lru_cache(maxsize=1)
 def get_ledger_repository() -> TransactionLedgerRepository:
     return TransactionLedgerRepository(get_database()["transaction_ledger"])
+
+
+@lru_cache(maxsize=1)
+def get_delivery_repository() -> DeliveryRepository:
+    return DeliveryRepository(get_database()["deliveries"])
+
+
+@lru_cache(maxsize=1)
+def get_dispute_repository() -> DisputeRepository:
+    return DisputeRepository(get_database()["disputes"])
 
 
 def payment_provider() -> PaymentProvider:
