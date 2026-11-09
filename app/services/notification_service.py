@@ -53,7 +53,7 @@ def send_notification(*, recipient_user_id: str, event: str, message: str, idemp
         return NotificationOutcome(failed or notifications.get(notification["id"]), "SMS provider failed; no delivery was confirmed")
     status = NotificationStatus.SIMULATED.value if result.simulated else NotificationStatus.ACCEPTED.value
     final = notifications.finish(notification["id"], status=status, provider_reference=result.provider_reference)
-    detail = "Mock SMS simulated; no message was sent" if result.simulated else "SMS request accepted by provider; handset delivery is not confirmed"
+    detail = f"{provider.name} sandbox message simulated; it was not delivered to a handset" if result.simulated else "SMS request accepted by provider; handset delivery is not confirmed"
     return NotificationOutcome(final or notifications.get(notification["id"]), detail)
 
 

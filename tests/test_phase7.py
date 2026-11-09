@@ -10,7 +10,7 @@ from app.main import app
 from app.models.user import UserRole
 from app.schemas.user import UserPublic
 from app.schemas.weather import WeatherForecastPoint, WeatherObservation, WeatherResponse
-from app.services.sms_providers import HttpSmsProvider, MockSmsProvider, SmsProviderError
+from app.services.sms_providers import AfricasTalkingSmsProvider, HttpSmsProvider, MockSmsProvider, SmsProviderError
 from app.services.notification_service import dispatch_sms_event
 
 FARMER = "64b000000000000000000001"
@@ -232,7 +232,7 @@ def test_sms_mock_is_explicit_and_idempotent(phase7_client):
     second=client.post("/notifications/send",headers=headers,json=body)
     assert first.status_code==second.status_code==200
     assert first.json()["notification"]["status"]=="SIMULATED"
-    assert "no message was sent" in first.json()["detail"]
+    assert "not delivered to a handset" in first.json()["detail"]
     assert len(notifications.items)==1
 
 
@@ -288,3 +288,55 @@ def test_generic_http_sms_adapter_uses_https_and_reports_provider_acceptance(mon
     monkeypatch.setattr(settings,"sms_api_url","http://sms.example.test/send")
     with pytest.raises(SmsProviderError):
         HttpSmsProvider().send_sms(to="0712345678",message="Test",idempotency_key="sms-adapter-test-002")
+
+
+def test_africas_talking_sandbox_adapter_uses_sandbox_and_marks_simulated(monkeypatch):
+    import app.services.sms_providers as sms
+    monkeypatch.setattr(settings,"sms_environment","sandbox")
+    monkeypatch.setattr(settings,"sms_username","sandbox")
+    monkeypatch.setattr(settings,"sms_api_key","unit-test-key")
+    monkeypatch.setattr(settings,"sms_sender_id","")
+    calls=[]
+    class Response:
+        def raise_for_status(self):pass
+        def json(self):return {"SMSMessageData":{"Recipients":[{"statusCode":101,"messageId":"AT-simulated-01"}]}}
+    def fake_post(url,**kwargs):
+        calls.append((url,kwargs));return Response()
+    monkeypatch.setattr(sms.httpx,"post",fake_post)
+    result=AfricasTalkingSmsProvider().send_sms(to="+254700000000",message="Sandbox check",idempotency_key="at-sandbox-0001")
+    assert result.simulated is True and result.provider_reference=="AT-simulated-01"
+    assert calls[0][0]=="https://api.sandbox.africastalking.com/version1/messaging"
+    assert calls[0][1]["headers"]["apiKey"]=="unit-test-key"
+    assert calls[0][1]["data"]=={"username":"sandbox","to":"+254700000000","message":"Sandbox check"}
+    assert "unit-test-key" not in repr(result)
+
+
+def test_africas_talking_production_requires_production_username_and_acceptance_is_not_simulated(monkeypatch):
+    import app.services.sms_providers as sms
+    monkeypatch.setattr(settings,"sms_environment","production")
+    monkeypatch.setattr(settings,"sms_username","sandbox")
+    monkeypatch.setattr(settings,"sms_api_key","unit-test-key")
+    with pytest.raises(SmsProviderError):
+        AfricasTalkingSmsProvider().send_sms(to="+254700000000",message="Test",idempotency_key="at-prod-0001")
+    monkeypatch.setattr(settings,"sms_username","production-app")
+    calls=[]
+    class Response:
+        def raise_for_status(self):pass
+        def json(self):return {"SMSMessageData":{"Recipients":[{"statusCode":100,"messageId":"AT-accepted-01"}]}}
+    monkeypatch.setattr(sms.httpx,"post",lambda url,**kwargs:(calls.append(url) or Response()))
+    result=AfricasTalkingSmsProvider().send_sms(to="+254700000000",message="Test",idempotency_key="at-prod-0002")
+    assert calls==["https://api.africastalking.com/version1/messaging"]
+    assert result.simulated is False and result.provider_reference=="AT-accepted-01"
+
+
+def test_africas_talking_rejected_status_is_failure(monkeypatch):
+    import app.services.sms_providers as sms
+    monkeypatch.setattr(settings,"sms_environment","sandbox")
+    monkeypatch.setattr(settings,"sms_username","sandbox")
+    monkeypatch.setattr(settings,"sms_api_key","unit-test-key")
+    class Response:
+        def raise_for_status(self):pass
+        def json(self):return {"SMSMessageData":{"Recipients":[{"statusCode":401,"status":"Invalid recipient"}]}}
+    monkeypatch.setattr(sms.httpx,"post",lambda *args,**kwargs:Response())
+    with pytest.raises(SmsProviderError):
+        AfricasTalkingSmsProvider().send_sms(to="not-a-phone",message="Test",idempotency_key="at-fail-0001")

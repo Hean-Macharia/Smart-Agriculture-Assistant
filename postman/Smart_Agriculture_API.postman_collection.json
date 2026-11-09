@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5d385b41-1830-4ecf-a160-81bfa9e4215f",
     "name": "Smart_Agriculture_API",
-    "description": "Phases 1-7: authentication, farmer/buyer profiles, marketplace and orders, verified Daraja payments, escrow workflow, delivery/disputes/payouts, coordinate-based weather forecasts, advisory rules/history, market price observations/history, and an SMS adapter. Weather and production SMS require configured provider credentials. Mock SMS is explicitly simulated.",
+    "description": "Phases 1-8: authentication, farmer/buyer profiles, marketplace and orders, verified Daraja payments, escrow workflow, delivery/disputes/payouts, coordinate-based weather forecasts, advisory rules/history, market price observations/history, and an SMS adapter. Weather and production SMS require configured provider credentials. Mock SMS is explicitly simulated. Crop disease image screening uses a separately configured Keras model; it returns 503 while the model or labels are unavailable.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -2531,7 +2531,7 @@
               }
             ],
             "url": "{{base_url}}/notifications/send",
-            "description": "Admin/officer operation to a registered account. EVENT can be REGISTRATION, NEW_ORDER, PAYMENT_CONFIRMATION, DELIVERY_UPDATE, DISPUTE_UPDATE, SELLER_PAYOUT, or AGRICULTURAL_ADVISORY. In mock development, status is SIMULATED and no SMS is sent. HTTP gateway success means accepted, not handset delivery.",
+            "description": "Admin/officer operation to a registered account. EVENT can be REGISTRATION, NEW_ORDER, PAYMENT_CONFIRMATION, DELIVERY_UPDATE, DISPUTE_UPDATE, SELLER_PAYOUT, or AGRICULTURAL_ADVISORY. Africa's Talking Sandbox returns SIMULATED and records the message in its simulator; no handset receives it. Production provider acceptance does not confirm handset delivery. Never place API keys in Postman requests.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"recipient_user_id\": \"{{buyer_id}}\",\n  \"event\": \"NEW_ORDER\",\n  \"message\": \"A new order update is available in your Smart Agriculture account.\"\n}",
@@ -3060,6 +3060,75 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Payout outcome is explicit',()=>pm.expect([200,409,503]).to.include(pm.response.code));if(pm.response.code===200)pm.expect(['SIMULATED_SETTLEMENT','SETTLED']).to.include(pm.response.json().status);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Disease Detection",
+      "item": [
+        {
+          "name": "Predict from crop image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{base_url}}/disease-detection/predict",
+            "description": "Farmer-only. Select a JPEG, PNG, or WebP file for form field image. HTTP 201 returns a model prediction and stores metadata/history; HTTP 503 is expected until trained model and label files are configured. Never treat the score as a guaranteed diagnosis."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Prediction either returned or model is honestly unavailable',()=>pm.expect([201,503]).to.include(pm.response.code));",
+                  "if(pm.response.code===201){const p=pm.response.json();pm.environment.set('disease_report_id',p.id);pm.expect(p.predicted_label).to.be.a('string');pm.expect(p.confidence).to.be.within(0,1);pm.expect(p.disclaimer).to.include('not a guaranteed diagnosis');}else{pm.expect(pm.response.json().detail).to.include('unavailable');}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my screening history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/mine?limit=20&offset=0",
+            "description": "Farmer-only; shows only the authenticated farmer’s prediction metadata."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Screening history returned',()=>pm.response.to.have.status(200));",
+                  "const r=pm.response.json();pm.expect(r.items).to.be.an('array');pm.expect(r.total).to.be.a('number');"
                 ]
               }
             }

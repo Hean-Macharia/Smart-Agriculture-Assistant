@@ -1,6 +1,6 @@
 # Smart Agriculture Advisory and Market Linkage API
 
-This FastAPI backend is being built in phases. **Phases 1 through 7 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, an append-only transaction ledger, delivery tracking, dispute review, refund request recording, payout status/release handling, weather forecasts, farm-linked weather guidance, market price records/history, and SMS adapter operations. Machine-learning disease detection is a later phase.
+This FastAPI backend is being built in phases. **Phases 1 through 8 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, an append-only transaction ledger, delivery tracking, dispute review, refund request recording, payout status/release handling, weather forecasts, farm-linked weather guidance, market price records/history, SMS adapter operations, and model-backed crop image screening. A trained disease model and matching label file must be supplied before inference can return predictions.
 
 ## Requirements and installation
 
@@ -17,6 +17,12 @@ Copy-Item .env.example .env
 ```
 
 If `.env` already exists, keep it and add the settings listed below instead of overwriting it. Set `MONGODB_URI` and `DATABASE_NAME`. Set `JWT_SECRET_KEY` and `ADMIN_BOOTSTRAP_TOKEN` to separate random values of at least 32 characters. Do not commit `.env` or paste its secrets into shared Postman environments. No default administrator password is embedded in the application.
+
+### Disease model setup
+
+The endpoints are `POST /disease-detection/predict` (farmer JWT, multipart form field `image`) and `GET /disease-detection/mine` (farmer JWT). Upload JPEG, PNG, or WebP up to `DISEASE_IMAGE_MAX_BYTES` (8 MiB by default). The service decodes with OpenCV, resizes to `DISEASE_INPUT_SIZE` (224 by default), converts to RGB, and scales pixels to 0–1. It stores prediction metadata and the image SHA-256 in MongoDB, not the original image. The response says that the model output is preliminary screening, not a diagnosis.
+
+Install TensorFlow when a trained model is available: `python -m pip install -r requirements-ml.txt`. Configure `DISEASE_MODEL_PATH` to a trusted Keras `.keras` model and `DISEASE_LABELS_PATH` to a JSON list in the model output order, for example `[\"Maize___Common_Rust\", \"Maize___Healthy\"]` (or `{\"classes\": [...]}`). The model must accept input shaped `(1, 224, 224, 3)` and output one score per label; adjust `DISEASE_INPUT_SIZE` to match its training input. No model weights or accuracy claims are bundled. Without model assets and TensorFlow, inference returns HTTP 503 rather than a fabricated prediction. TensorFlow is optional because it is a large runtime; its official pip guide lists Python 3.10–3.13 and native Windows CPU support, while GPU inference on Windows uses WSL2: [TensorFlow installation guide](https://www.tensorflow.org/install/pip).
 
 For local MongoDB, defaults are `mongodb://localhost:27017` and database `smart_agriculture`. The API starts for diagnosis if MongoDB is down, but database-backed registration and login return unavailable until MongoDB responds.
 
@@ -286,7 +292,7 @@ There is no automatic market price feed in this phase. API records must come fro
 
 Supported event labels are `REGISTRATION`, `NEW_ORDER`, `PAYMENT_CONFIRMATION`, `DELIVERY_UPDATE`, `DISPUTE_UPDATE`, `SELLER_PAYOUT`, and `AGRICULTURAL_ADVISORY`. An officer/admin can send an event message directly. Domain routes also queue event SMS for registration, new orders, verified payment, delivery, dispute, payout, and farmer weather guidance when `SMS_AUTO_DISPATCH=true`; background dispatch is best-effort and does not roll back the business operation. It defaults to false. The SMS history records accepted/simulated/failed attempts.
 
-`SMS_PROVIDER=mock` is development/test simulation only and production mock sending returns 503. Set `SMS_AUTO_DISPATCH=true` to enable the domain event hooks; automatic sends are off by default. `SMS_PROVIDER=http` uses the configurable generic JSON/Bearer adapter: set `SMS_API_URL`, `SMS_API_KEY`, and optional `SMS_SENDER_ID` to match a gateway that supports `{to, message, sender_id}` and the `Idempotency-Key` header. Gateway HTTP acceptance is stored as `ACCEPTED`; it is not proof that the recipient handset received the message. Provider errors are stored as `FAILED`; API keys and recipient phone numbers are not returned in notification history.
+For Africa's Talking Sandbox, set `SMS_PROVIDER=africas_talking`, `SMS_ENVIRONMENT=sandbox`, `SMS_USERNAME=sandbox`, and `SMS_API_KEY` to the key generated for the Sandbox app. Sandbox requests are reported as `SIMULATED` and appear in its simulator; they do not reach a handset. Keep `SMS_AUTO_DISPATCH=false` while validating. Production requires `SMS_ENVIRONMENT=production`, the production app username/key, and any approved sender ID; provider acceptance is stored as `ACCEPTED`, not proof of handset delivery. The adapter does not log API keys, phone numbers, message bodies, or provider response text. `SMS_PROVIDER=http` remains available for generic JSON/Bearer gateways with `SMS_API_URL`, `SMS_API_KEY`, and optional `SMS_SENDER_ID`. `SMS_PROVIDER=mock` is development/test-only. Provider errors are stored as `FAILED`; API keys and recipient phone numbers are not returned in notification history.
 
 ### Phase 7 Postman workflow and tests
 
@@ -294,5 +300,5 @@ Supported event labels are `REGISTRATION`, `NEW_ORDER`, `PAYMENT_CONFIRMATION`, 
 2. Bootstrap/login admin, create the officer account, and run **Login officer**.
 3. Create an advisory as officer; login as farmer and filter by crop and county. For weather prompts, use a farmer-owned farm/crop and coordinate values.
 4. Enter a real observed market price, collection date, location, unit, and source in the Postman environment before running **Add observed price**. Exercise filters, comparison, history, and a revision.
-5. In development with `SMS_PROVIDER=mock`, run **Send event SMS** and confirm `SIMULATED`. For a live gateway, configure `SMS_PROVIDER=http` and its credentials; successful API response means accepted, not delivered.
+5. With Africa's Talking Sandbox configured, run **Send event SMS** as an admin/officer with a registered recipient and unique `Idempotency-Key`. Confirm `SIMULATED` and check the Africa's Talking simulator (no handset receives it). Do not enable automatic dispatch until this manual check succeeds. Production requires production credentials and a configured approved sender ID; a successful response means accepted, not delivered.
 6. `python -m pytest -q` runs isolated tests using fake weather/SMS providers and in-memory repositories; tests do not call external providers or production MongoDB.

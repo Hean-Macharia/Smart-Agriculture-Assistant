@@ -25,6 +25,7 @@ from app.core.dependencies import (
     get_advisory_repository,
     get_market_price_repository,
     get_notification_repository,
+    get_disease_report_repository,
 )
 from app.routes.auth import router as auth_router
 from app.routes.buyers import router as buyers_router
@@ -44,6 +45,7 @@ from app.routes.weather import router as weather_router
 from app.routes.advisory import router as advisory_router
 from app.routes.market_prices import router as market_prices_router
 from app.routes.notifications import router as notifications_router
+from app.routes.disease_detection import router as disease_detection_router
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,7 @@ async def lifespan(_: FastAPI):
     get_advisory_repository.cache_clear()
     get_market_price_repository.cache_clear()
     get_notification_repository.cache_clear()
+    get_disease_report_repository.cache_clear()
     close_mongo_connection()
 
 
@@ -94,6 +97,7 @@ app.include_router(weather_router)
 app.include_router(advisory_router)
 app.include_router(market_prices_router)
 app.include_router(notifications_router)
+app.include_router(disease_detection_router)
 
 
 @app.exception_handler(PyMongoError)

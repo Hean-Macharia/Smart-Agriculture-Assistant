@@ -36,11 +36,18 @@ class Settings(BaseSettings):
     sms_api_key: str = Field(default="", repr=False)
     sms_api_url: str = ""
     sms_sender_id: str = ""
+    sms_username: str = "sandbox"
+    sms_environment: Literal["sandbox", "production"] = "sandbox"
     sms_auto_dispatch: bool = False
+
+    disease_model_path: str = ""
+    disease_labels_path: str = ""
+    disease_image_max_bytes: int = Field(default=8_388_608, ge=1024, le=25_000_000)
+    disease_input_size: int = Field(default=224, ge=32, le=1024)
 
     payment_provider: Literal["mock", "daraja"] = "mock"
     escrow_provider: Literal["mock", "partner"] = "mock"
-    sms_provider: Literal["mock", "http"] = "mock"
+    sms_provider: Literal["mock", "http", "africas_talking"] = "mock"
     platform_commission_bps: int = Field(default=500, ge=0, le=10000)
 
     model_config = SettingsConfigDict(

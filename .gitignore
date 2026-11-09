@@ -8,3 +8,5 @@ __pycache__/
 .vscode/
 uploads/crop_images/*
 !uploads/crop_images/.gitkeep
+uploads/models/*
+!uploads/models/.gitkeep

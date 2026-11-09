@@ -21,6 +21,7 @@ from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.advisory_repository import AdvisoryRepository
 from app.repositories.market_price_repository import MarketPriceRepository
 from app.repositories.notification_repository import NotificationRepository
+from app.repositories.disease_report_repository import DiseaseReportRepository
 from app.services.escrow_providers import EscrowProvider, get_escrow_provider
 from app.services.payment_providers import PaymentProvider, get_payment_provider
 from app.services.sms_providers import SmsProvider, get_sms_provider
@@ -103,6 +104,11 @@ def get_market_price_repository() -> MarketPriceRepository:
 @lru_cache(maxsize=1)
 def get_notification_repository() -> NotificationRepository:
     return NotificationRepository(get_database()["notifications"])
+
+
+@lru_cache(maxsize=1)
+def get_disease_report_repository() -> DiseaseReportRepository:
+    return DiseaseReportRepository(get_database()["disease_reports"])
 
 
 def payment_provider() -> PaymentProvider:
