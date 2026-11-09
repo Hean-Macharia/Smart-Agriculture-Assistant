@@ -75,7 +75,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for agricultural advice and produce market linkage.",
-    version="0.7.0",
+    version="0.8.0",
     debug=settings.debug,
     lifespan=lifespan,
 )

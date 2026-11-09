@@ -302,3 +302,22 @@ For Africa's Talking Sandbox, set `SMS_PROVIDER=africas_talking`, `SMS_ENVIRONME
 4. Enter a real observed market price, collection date, location, unit, and source in the Postman environment before running **Add observed price**. Exercise filters, comparison, history, and a revision.
 5. With Africa's Talking Sandbox configured, run **Send event SMS** as an admin/officer with a registered recipient and unique `Idempotency-Key`. Confirm `SIMULATED` and check the Africa's Talking simulator (no handset receives it). Do not enable automatic dispatch until this manual check succeeds. Production requires production credentials and a configured approved sender ID; a successful response means accepted, not delivered.
 6. `python -m pytest -q` runs isolated tests using fake weather/SMS providers and in-memory repositories; tests do not call external providers or production MongoDB.
+
+## Phase 8 disease image screening and Phase 9 verification
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| POST | `/disease-detection/predict` | FARMER | Upload JPEG, PNG, or WebP in multipart field `image`; model-backed screening and saved metadata |
+| GET | `/disease-detection/mine` | FARMER | Paginated prediction history for the current farmer only |
+
+Prediction requires a trained Keras model and a JSON class list that exactly matches the model output order. Images are size-limited and rejected above 25 million pixels; only a content hash and metadata are stored in MongoDB. No model or image dataset is included, so missing model/dependency configuration returns HTTP 503. No prediction accuracy is claimed by this project. In Postman, use **Disease Detection > Predict from crop image**, choose a file, then run **List my screening history** after a successful 201 response. Until model assets are set up, the test accepts and explains a 503 response.
+
+Final local verification:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+python -m pytest -q
+python -m compileall -q app tests
+```
+
+The automated suite uses isolated in-memory repositories and mocked external providers; it does not call production M-Pesa, SMS, or weather services and does not use the production database. Import the collection and environment under `postman/` for manual API workflows. Never put production credentials into a shared Postman environment.

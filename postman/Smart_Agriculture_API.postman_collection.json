@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5d385b41-1830-4ecf-a160-81bfa9e4215f",
     "name": "Smart_Agriculture_API",
-    "description": "Phases 1-8: authentication, farmer/buyer profiles, marketplace and orders, verified Daraja payments, escrow workflow, delivery/disputes/payouts, coordinate-based weather forecasts, advisory rules/history, market price observations/history, and an SMS adapter. Weather and production SMS require configured provider credentials. Mock SMS is explicitly simulated. Crop disease image screening uses a separately configured Keras model; it returns 503 while the model or labels are unavailable.",
+    "description": "Phases 1-8 REST API for smart agricultural advisory, marketplace transactions, and model-backed disease screening. The disease model and label map must be supplied. Daraja callbacks are provider-originated; mock payment callbacks are development/test simulations only.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -476,48 +476,6 @@
           ]
         },
         {
-          "name": "Admin creates agricultural officer",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/auth/admin/users",
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"full_name\": \"{{officer_name}}\",\n  \"email\": \"{{officer_email}}\",\n  \"phone\": \"{{officer_phone}}\",\n  \"password\": \"{{officer_password}}\",\n  \"role\": \"AGRICULTURAL_OFFICER\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Admin can create officer', () => pm.expect([201,409]).to.include(pm.response.code));",
-                  "if(pm.response.code===201) pm.expect(pm.response.json().role).to.eql('AGRICULTURAL_OFFICER');",
-                  "if(pm.response.code===201) pm.environment.set('officer_id',pm.response.json().id);"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "Login officer",
           "request": {
             "method": "POST",
@@ -547,33 +505,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Officer login succeeds',()=>pm.response.to.have.status(200));const r=pm.response.json();pm.environment.set('officer_access_token',r.access_token);pm.environment.set('officer_id',r.user.id);pm.expect(r.user.role).to.eql('AGRICULTURAL_OFFICER');"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "List users (admin only)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/auth/admin/users?limit=20&offset=0",
-            "description": ""
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('User page returned', () => pm.response.to.have.status(200));",
-                  "pm.expect(pm.response.json().items).to.be.an('array'); pm.expect(pm.response.json().total).to.be.a('number');"
                 ]
               }
             }
@@ -966,6 +897,32 @@
               }
             }
           ]
+        },
+        {
+          "name": "Deactivate farm",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/farms/{{farm_id}}",
+            "description": "Farmer owner only. Returns 204 and deactivates this farm; run after any crop testing that depends on it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Farm deactivated',()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1143,6 +1100,32 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Invalid date order rejected',()=>pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate crop",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crops/{{crop_id}}",
+            "description": "Farmer owner only. Returns 204 and deactivates this crop."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Crop deactivated',()=>pm.response.to.have.status(204));"
                 ]
               }
             }
@@ -1971,23 +1954,27 @@
           ]
         },
         {
-          "name": "Admin payment history",
+          "name": "Daraja callback (Safaricom only)",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{admin_access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_access_token}}",
+                "key": "Content-Type",
+                "value": "application/json",
                 "type": "text"
               }
             ],
-            "url": "{{base_url}}/payments/admin/history?limit=20&offset=0",
-            "description": ""
+            "url": "{{base_url}}/payments/callback/daraja",
+            "description": "Public webhook called by Safaricom. Do not send fabricated success callbacks from Postman. An empty example will be rejected or remain unverifiable; successful payment requires a real provider callback plus a verified status query.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Body\": {\n    \"stkCallback\": {}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -1995,8 +1982,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Admin history returned',()=>pm.response.to.have.status(200));",
-                  "pm.expect(pm.response.json().items).to.be.an('array');"
+                  "pm.test('Callback is acknowledged or safely rejected',()=>pm.expect([200,400,409,503]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2128,6 +2114,349 @@
                 "exec": [
                   "pm.test('Refund review request recorded',()=>pm.expect([200,409]).to.include(pm.response.code));",
                   "if(pm.response.code===200) pm.expect(['REFUND_REQUESTED','PAYMENT_RECEIVED']).to.include(pm.response.json().status);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Deliveries",
+      "item": [
+        {
+          "name": "Create delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/orders/{{order_id}}",
+            "description": "Seller-only. Order must be READY_FOR_DELIVERY.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carrier_name\": \"Local courier\",\n  \"carrier_phone\": \"0712345678\",\n  \"tracking_reference\": \"TEST-TRACK-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery created',()=>pm.response.to.have.status(201));",
+                  "const d=pm.response.json();pm.environment.set('delivery_id',d.id);pm.expect(d.status).to.eql('PENDING');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller marks picked up",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
+            "description": "Seller progress update.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PICKED_UP\",\n  \"note\": \"Collected from farm\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Picked up',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('PICKED_UP');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller marks in transit",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
+            "description": "Seller progress update.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_TRANSIT\",\n  \"note\": \"On the way\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('In transit',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('IN_TRANSIT');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller marks delivered",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
+            "description": "Seller records delivery; this does not complete the order until buyer confirmation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DELIVERED\",\n  \"note\": \"Delivered to recipient\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivered',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('DELIVERED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buyer confirms delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}/confirm",
+            "description": "Buyer-only; completes the order after seller marks it delivered."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery confirmed',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('CONFIRMED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/mine?limit=20&offset=0",
+            "description": "Buyer or farmer; returns only the current user’s deliveries."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery list',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get delivery tracking details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/deliveries/{{delivery_id}}",
+            "description": "Buyer, seller, or admin; other users receive 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery details returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().status).to.be.a('string');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Disputes",
+      "item": [
+        {
+          "name": "Buyer opens dispute",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes",
+            "description": "Open only one dispute for a paid order; do this before buyer confirmation if the order is ready for delivery.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"reason\": \"DAMAGED_PRODUCE\",\n  \"description\": \"The produce arrived damaged and requires review.\",\n  \"evidence_urls\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dispute opened',()=>pm.response.to.have.status(201));const d=pm.response.json();pm.environment.set('dispute_id',d.id);pm.expect(d.status).to.eql('OPEN');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my disputes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes/mine?limit=20&offset=0",
+            "description": "Participant-only dispute list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dispute list',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get dispute details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disputes/{{dispute_id}}",
+            "description": "Only a dispute participant or admin can read this dispute."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dispute details returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().decisions).to.be.an('array');"
                 ]
               }
             }
@@ -2507,6 +2836,75 @@
       ]
     },
     {
+      "name": "Disease Detection",
+      "item": [
+        {
+          "name": "Predict from crop image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{base_url}}/disease-detection/predict",
+            "description": "Farmer-only. Select a JPEG, PNG, or WebP file for form field image. HTTP 201 returns a model prediction and stores metadata/history; HTTP 503 is expected until trained model and label files are configured. Never treat the score as a guaranteed diagnosis."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Prediction either returned or model is honestly unavailable',()=>pm.expect([201,503]).to.include(pm.response.code));",
+                  "if(pm.response.code===201){const p=pm.response.json();pm.environment.set('disease_report_id',p.id);pm.expect(p.predicted_label).to.be.a('string');pm.expect(p.confidence).to.be.within(0,1);pm.expect(p.disclaimer).to.include('not a guaranteed diagnosis');}else{pm.expect(pm.response.json().detail).to.include('unavailable');}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my screening history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/mine?limit=20&offset=0",
+            "description": "Farmer-only; shows only the authenticated farmer’s prediction metadata."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Screening history returned',()=>pm.response.to.have.status(200));",
+                  "const r=pm.response.json();pm.expect(r.items).to.be.an('array');pm.expect(r.total).to.be.a('number');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Notifications",
       "item": [
         {
@@ -2583,20 +2981,63 @@
       ]
     },
     {
-      "name": "Transactions",
+      "name": "Admin",
+      "description": "Administrator-only account, payment, and dispute operations. Bootstrap token and admin bearer token must remain private.",
       "item": [
         {
-          "name": "Order financial ledger",
+          "name": "Admin creates agricultural officer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/auth/admin/users",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"{{officer_name}}\",\n  \"email\": \"{{officer_email}}\",\n  \"phone\": \"{{officer_phone}}\",\n  \"password\": \"{{officer_password}}\",\n  \"role\": \"AGRICULTURAL_OFFICER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin can create officer', () => pm.expect([201,409]).to.include(pm.response.code));",
+                  "if(pm.response.code===201) pm.expect(pm.response.json().role).to.eql('AGRICULTURAL_OFFICER');",
+                  "if(pm.response.code===201) pm.environment.set('officer_id',pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List users (admin only)",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{buyer_access_token}}",
+                "value": "Bearer {{access_token}}",
                 "type": "text"
               }
             ],
-            "url": "{{base_url}}/transactions/orders/{{order_id}}/ledger",
+            "url": "{{base_url}}/auth/admin/users?limit=20&offset=0",
             "description": ""
           },
           "event": [
@@ -2605,290 +3046,31 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Ledger returned',()=>pm.response.to.have.status(200));",
-                  "pm.expect(pm.response.json().items).to.be.an('array');",
-                  "pm.response.json().items.forEach(e=>{pm.expect(e.currency).to.eql('KES');pm.expect(e.amount_kes%1).to.eql(0);});"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Deliveries",
-      "item": [
-        {
-          "name": "Create delivery",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{farmer_access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/deliveries/orders/{{order_id}}",
-            "description": "Seller-only. Order must be READY_FOR_DELIVERY.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"carrier_name\": \"Local courier\",\n  \"carrier_phone\": \"0712345678\",\n  \"tracking_reference\": \"TEST-TRACK-001\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Delivery created',()=>pm.response.to.have.status(201));",
-                  "const d=pm.response.json();pm.environment.set('delivery_id',d.id);pm.expect(d.status).to.eql('PENDING');"
+                  "pm.test('User page returned', () => pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array'); pm.expect(pm.response.json().total).to.be.a('number');"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Seller marks picked up",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{farmer_access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
-            "description": "Seller progress update.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"PICKED_UP\",\n  \"note\": \"Collected from farm\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Picked up',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('PICKED_UP');"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Seller marks in transit",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{farmer_access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
-            "description": "Seller progress update.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"IN_TRANSIT\",\n  \"note\": \"On the way\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('In transit',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('IN_TRANSIT');"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Seller marks delivered",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{farmer_access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/deliveries/{{delivery_id}}/status",
-            "description": "Seller records delivery; this does not complete the order until buyer confirmation.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"DELIVERED\",\n  \"note\": \"Delivered to recipient\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Delivered',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('DELIVERED');"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Buyer confirms delivery",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{buyer_access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/deliveries/{{delivery_id}}/confirm",
-            "description": "Buyer-only; completes the order after seller marks it delivered."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Delivery confirmed',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().status).to.eql('CONFIRMED');"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "List my deliveries",
+          "name": "Admin payment history",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{buyer_access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/deliveries/mine?limit=20&offset=0",
-            "description": "Buyer or farmer; returns only the current user’s deliveries."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Delivery list',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Disputes",
-      "item": [
-        {
-          "name": "Buyer opens dispute",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{buyer_access_token}}",
+                "value": "Bearer {{admin_access_token}}",
                 "type": "text"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/disputes",
-            "description": "Open only one dispute for a paid order; do this before buyer confirmation if the order is ready for delivery.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"reason\": \"DAMAGED_PRODUCE\",\n  \"description\": \"The produce arrived damaged and requires review.\",\n  \"evidence_urls\": []\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Dispute opened',()=>pm.response.to.have.status(201));const d=pm.response.json();pm.environment.set('dispute_id',d.id);pm.expect(d.status).to.eql('OPEN');"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "List my disputes",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
                 "key": "Authorization",
-                "value": "Bearer {{buyer_access_token}}",
+                "value": "Bearer {{admin_access_token}}",
                 "type": "text"
               }
             ],
-            "url": "{{base_url}}/disputes/mine?limit=20&offset=0",
-            "description": "Participant-only dispute list."
+            "url": "{{base_url}}/payments/admin/history?limit=20&offset=0",
+            "description": ""
           },
           "event": [
             {
@@ -2896,7 +3078,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Dispute list',()=>pm.response.to.have.status(200));pm.expect(pm.response.json().items).to.be.an('array');"
+                  "pm.test('Admin history returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');"
                 ]
               }
             }
@@ -3011,6 +3194,39 @@
       ]
     },
     {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Order financial ledger",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/transactions/orders/{{order_id}}/ledger",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ledger returned',()=>pm.response.to.have.status(200));",
+                  "pm.expect(pm.response.json().items).to.be.an('array');",
+                  "pm.response.json().items.forEach(e=>{pm.expect(e.currency).to.eql('KES');pm.expect(e.amount_kes%1).to.eql(0);});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Payouts",
       "item": [
         {
@@ -3060,75 +3276,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Payout outcome is explicit',()=>pm.expect([200,409,503]).to.include(pm.response.code));if(pm.response.code===200)pm.expect(['SIMULATED_SETTLEMENT','SETTLED']).to.include(pm.response.json().status);"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Disease Detection",
-      "item": [
-        {
-          "name": "Predict from crop image",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{farmer_access_token}}",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "image",
-                  "type": "file",
-                  "src": ""
-                }
-              ]
-            },
-            "url": "{{base_url}}/disease-detection/predict",
-            "description": "Farmer-only. Select a JPEG, PNG, or WebP file for form field image. HTTP 201 returns a model prediction and stores metadata/history; HTTP 503 is expected until trained model and label files are configured. Never treat the score as a guaranteed diagnosis."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Prediction either returned or model is honestly unavailable',()=>pm.expect([201,503]).to.include(pm.response.code));",
-                  "if(pm.response.code===201){const p=pm.response.json();pm.environment.set('disease_report_id',p.id);pm.expect(p.predicted_label).to.be.a('string');pm.expect(p.confidence).to.be.within(0,1);pm.expect(p.disclaimer).to.include('not a guaranteed diagnosis');}else{pm.expect(pm.response.json().detail).to.include('unavailable');}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "List my screening history",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{farmer_access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/disease-detection/mine?limit=20&offset=0",
-            "description": "Farmer-only; shows only the authenticated farmer’s prediction metadata."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Screening history returned',()=>pm.response.to.have.status(200));",
-                  "const r=pm.response.json();pm.expect(r.items).to.be.an('array');pm.expect(r.total).to.be.a('number');"
                 ]
               }
             }
