@@ -73,33 +73,38 @@ class MemoryPayments:
 
     @staticmethod
     def public(doc):
-        return deepcopy(doc)
+        if doc is None:
+            return None
+        result = deepcopy(doc)
+        for field in ("active_order_id", "idempotency_key", "merchant_request_id", "callback_phone_number", "callback_amount_kes"):
+            result.pop(field, None)
+        return result
 
     def create_pending(self, values):
         with self.lock:
             prior = next((p for p in self.items.values() if p["idempotency_key"] == values["idempotency_key"]), None)
             if prior:
                 if all(prior[k] == values[k] for k in ("order_id", "amount_kes", "phone_number")):
-                    return deepcopy(prior)
+                    return self.public(prior)
                 raise ValueError("idempotency conflict")
             if any(p["order_id"] == values["order_id"] and p["status"] in {"PENDING", "INITIATING", "INITIATED"} for p in self.items.values()):
                 raise ValueError("active order payment")
             now = datetime.now(timezone.utc)
             doc = {**deepcopy(values), "id": str(ObjectId()), "status": "PENDING", "currency": "KES", "created_at": now, "updated_at": now, "checkout_request_id": None, "provider_receipt": None}
             self.items[doc["id"]] = doc
-            return deepcopy(doc)
+            return self.public(doc)
 
     def get(self, payment_id):
         doc = self.items.get(payment_id)
-        return deepcopy(doc) if doc else None
+        return self.public(doc)
 
     def get_by_checkout(self, checkout_request_id):
         doc = next((p for p in self.items.values() if p.get("checkout_request_id") == checkout_request_id), None)
-        return deepcopy(doc) if doc else None
+        return self.public(doc)
 
     def get_by_idempotency(self, key):
         doc = next((p for p in self.items.values() if p["idempotency_key"] == key), None)
-        return deepcopy(doc) if doc else None
+        return self.public(doc)
 
     def claim_initiation(self, payment_id):
         with self.lock:
@@ -107,7 +112,7 @@ class MemoryPayments:
             if not doc or doc["status"] != "PENDING":
                 return None
             doc["status"] = "INITIATING"
-            return deepcopy(doc)
+            return self.public(doc)
 
     def set_initiated(self, payment_id, merchant_request_id, checkout_request_id):
         with self.lock:
@@ -115,7 +120,7 @@ class MemoryPayments:
             if doc["status"] != "INITIATING":
                 return None
             doc.update(status="INITIATED", merchant_request_id=merchant_request_id, checkout_request_id=checkout_request_id)
-            return deepcopy(doc)
+            return self.public(doc)
 
     def set_initiation_failed(self, payment_id, reason):
         self.items[payment_id].update(status="INITIATION_FAILED", failure_reason=reason)
@@ -127,19 +132,19 @@ class MemoryPayments:
             if doc["status"] not in {"INITIATING", "INITIATED"}:
                 current = (doc["status"], doc.get("provider_receipt"), doc.get("callback_amount_kes"), doc.get("callback_phone_number"))
                 if current == proposed:
-                    return deepcopy(doc)
+                    return self.public(doc)
                 from app.repositories.payment_repository import PaymentConflictError
                 raise PaymentConflictError
             doc.update(status=status.value, provider_receipt=receipt, callback_amount_kes=callback_amount, callback_phone_number=callback_phone, failure_reason=failure_reason, updated_at=datetime.now(timezone.utc))
-            return deepcopy(doc)
+            return self.public(doc)
 
     def list_for_buyer(self, buyer_id, *, skip, limit):
         docs = [p for p in self.items.values() if p["buyer_id"] == buyer_id]
-        return [deepcopy(p) for p in docs[skip:skip + limit]], len(docs)
+        return [self.public(p) for p in docs[skip:skip + limit]], len(docs)
 
     def list_all(self, *, skip, limit):
         docs = list(self.items.values())
-        return [deepcopy(p) for p in docs[skip:skip + limit]], len(docs)
+        return [self.public(p) for p in docs[skip:skip + limit]], len(docs)
 
 
 class MemoryEscrows:
@@ -255,6 +260,9 @@ def test_mock_confirmation_marks_payment_paid_creates_internal_escrow_and_ledger
     success = client.post(url, json={"success": True})
     assert success.status_code == 200 and success.json()["status"] == "SUCCEEDED"
     assert orders.get(ORDER_ID)["order_status"] == "PAID"
+    retrieved_order = client.get(f"/orders/{ORDER_ID}")
+    assert retrieved_order.status_code == 200
+    assert retrieved_order.json()["payment_id"] == payment["id"]
     escrow = escrows.get_by_order(ORDER_ID)
     assert escrow["amount_kes"] == 600
     assert escrow["commission_kes"] == 30

@@ -34,11 +34,14 @@ class OrderPublic(BaseModel):
     unit: str
     unit_price_kes: int
     total_amount_kes: int
+    payment_id: str | None = None
     delivery_information: DeliveryInformation
     payment_status: PaymentStatus
     order_status: OrderStatus
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class OrderListResponse(BaseModel):

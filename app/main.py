@@ -1,9 +1,11 @@
 """FastAPI application entry point."""
 
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 
@@ -76,9 +78,24 @@ app = FastAPI(
     title=settings.app_name,
     description="Backend API for agricultural advice and produce market linkage.",
     version="0.8.0",
-    debug=settings.debug,
+    # Never expose debug tracebacks when the deployment identifies itself as
+    # production, even if DEBUG was accidentally left enabled.
+    debug=settings.debug and settings.app_env.lower() not in {"production", "prod"},
     lifespan=lifespan,
 )
+cors_origins = [
+    origin.strip().rstrip("/")
+    for origin in settings.cors_allowed_origins.split(",")
+    if origin.strip()
+]
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Admin-Bootstrap-Token"],
+    )
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(farmers_router)
@@ -102,8 +119,31 @@ app.include_router(disease_detection_router)
 
 @app.exception_handler(PyMongoError)
 async def database_error_handler(_: Request, exc: PyMongoError) -> JSONResponse:
-    # Do not log driver exception text: it can include a credential-bearing URI.
-    logger.error("MongoDB operation failed (%s)", type(exc).__name__)
+    # Keep the driver message out of logs: some driver errors can contain
+    # connection details. Log only a small, allowlisted diagnostic category.
+    details = getattr(exc, "details", None)
+    message = details.get("errmsg", "") if isinstance(details, dict) else ""
+    normalized = message.lower()
+    category = "operation_failed"
+    action = "unknown"
+    if "authentication failed" in normalized or "bad auth" in normalized:
+        category = "authentication_failed"
+    elif "not authorized" in normalized or "not allowed to do action" in normalized:
+        category = "authorization_denied"
+        match = re.search(r"not allowed to do action \[([a-zA-Z]+)\]", message, re.IGNORECASE)
+        if match:
+            candidate = match.group(1).lower()
+            if candidate in {"createindex", "insert", "update", "find", "delete", "listcollections"}:
+                action = candidate
+
+    logger.error(
+        "MongoDB operation failed: category=%s, action=%s, type=%s, code=%s, code_name=%s",
+        category,
+        action,
+        type(exc).__name__,
+        getattr(exc, "code", None),
+        getattr(exc, "code_name", None),
+    )
     return JSONResponse(
         status_code=503,
         content={"detail": "Database temporarily unavailable"},

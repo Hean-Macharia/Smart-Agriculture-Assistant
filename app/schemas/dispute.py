@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from app.models.dispute import DisputeDecision, DisputeReason, DisputeStatus
+from app.models.order import OrderStatus
 
 
 class DisputeCreate(BaseModel):
@@ -20,6 +21,16 @@ class DisputeReview(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+class DisputeDecisionPublic(BaseModel):
+    admin_id: str
+    status: DisputeStatus
+    decision: DisputeDecision | None = None
+    resolution: str
+    at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class DisputePublic(BaseModel):
     id: str
     order_id: str
@@ -30,9 +41,12 @@ class DisputePublic(BaseModel):
     description: str
     evidence_urls: list[str]
     status: DisputeStatus
-    decisions: list[dict]
+    decisions: list[DisputeDecisionPublic]
     created_at: datetime
     updated_at: datetime
+    previous_order_status: OrderStatus | None = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class DisputeListResponse(BaseModel):

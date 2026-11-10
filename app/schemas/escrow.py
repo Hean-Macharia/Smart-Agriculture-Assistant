@@ -17,8 +17,12 @@ class EscrowPublic(BaseModel):
     commission_kes: int
     seller_amount_kes: int
     provider_reference: str | None = None
+    last_action_reference: str | None = None
+    refund_reason: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class RefundRequest(BaseModel):

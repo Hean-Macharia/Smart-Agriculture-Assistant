@@ -15,7 +15,9 @@ class DiseasePredictionPublic(BaseModel):
     disclaimer: str
     created_at: datetime
 
-    model_config = ConfigDict(extra="ignore")
+    # The repository explicitly maps and removes internal MongoDB fields.
+    # Reject unexpected output keys so schema drift is visible during testing.
+    model_config = ConfigDict(extra="forbid")
 
 
 class DiseasePredictionList(BaseModel):

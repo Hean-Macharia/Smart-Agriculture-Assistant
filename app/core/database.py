@@ -15,6 +15,9 @@ def connect_to_mongo() -> None:
         _client = MongoClient(
             settings.mongodb_uri,
             serverSelectionTimeoutMS=settings.mongodb_server_selection_timeout_ms,
+            # MongoDB stores BSON datetimes in UTC; keep them timezone-aware
+            # when reading documents back for consistent API serialization.
+            tz_aware=True,
         )
     _client.admin.command("ping")
 

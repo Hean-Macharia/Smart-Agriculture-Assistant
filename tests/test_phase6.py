@@ -124,6 +124,8 @@ def test_delivery_lifecycle_authorizes_seller_and_buyer_confirmation(phase6_clie
     current["user"] = public_user(BUYER, UserRole.BUYER)
     confirmed = client.post(f"/deliveries/{delivery_id}/confirm")
     assert confirmed.status_code == 200 and confirmed.json()["status"] == "CONFIRMED"
+    assert isinstance(confirmed.json()["events"][-1]["at"], str)
+    assert confirmed.json()["events"][-1]["by"] == BUYER
     assert orders.order["order_status"] == OrderStatus.COMPLETED.value
     assert len(deliveries.get(delivery_id)["events"]) == 5
 
@@ -151,6 +153,7 @@ def test_dispute_review_is_audited_and_blocks_until_resolution(phase6_client):
     resolved = client.patch(f"/disputes/{dispute_id}/review", json={"status": "RESOLVED", "decision": "REFUND_BUYER", "resolution": "Refund is approved; use the configured provider workflow."})
     assert resolved.status_code == 200
     assert resolved.json()["decisions"][-1]["admin_id"] == ADMIN
+    assert "previous_order_status" not in resolved.json()
     assert orders.order["order_status"] == OrderStatus.READY_FOR_DELIVERY.value
     assert len(disputes.get(dispute_id)["decisions"]) == 2
 

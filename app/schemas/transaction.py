@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.transaction import LedgerEventType
 
@@ -15,6 +15,8 @@ class LedgerEventPublic(BaseModel):
     timestamp: datetime
     provider_reference: str | None = None
     status: str
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class LedgerListResponse(BaseModel):

@@ -16,7 +16,7 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-If `.env` already exists, keep it and add the settings listed below instead of overwriting it. Set `MONGODB_URI` and `DATABASE_NAME`. Set `JWT_SECRET_KEY` and `ADMIN_BOOTSTRAP_TOKEN` to separate random values of at least 32 characters. Do not commit `.env` or paste its secrets into shared Postman environments. No default administrator password is embedded in the application.
+If `.env` already exists, keep it and add the settings listed below instead of overwriting it. Set `MONGODB_URI` and `DATABASE_NAME`. For Atlas, use the current cluster URI with an empty database path and `authSource=admin` for a standard Atlas database user; grant that database user `readWrite` on `DATABASE_NAME`. Set `JWT_SECRET_KEY` and `ADMIN_BOOTSTRAP_TOKEN` to separate random values of at least 32 characters. In production set `APP_ENV=production` and `DEBUG=false`. Browser frontends must set `CORS_ALLOWED_ORIGINS` to a comma-separated list of exact origins; it defaults to empty. Do not commit `.env` or paste its secrets into shared Postman environments. No default administrator password is embedded in the application.
 
 ### Disease model setup
 

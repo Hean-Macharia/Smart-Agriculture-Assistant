@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -16,3 +18,5 @@ class FarmerProfileUpsert(BaseModel):
 class FarmerProfile(FarmerProfileUpsert):
     id: str
     user_id: str
+    created_at: datetime
+    updated_at: datetime

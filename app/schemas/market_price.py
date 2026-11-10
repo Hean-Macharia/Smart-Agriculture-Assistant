@@ -38,6 +38,8 @@ class MarketPricePublic(BaseModel):
     supersedes_id: str | None = None
     created_at: datetime
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class MarketPriceListResponse(BaseModel):
     items: list[MarketPricePublic]

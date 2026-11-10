@@ -21,6 +21,9 @@ class NotificationPublic(BaseModel):
     status: NotificationStatus
     provider_reference: str | None = None
     created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class NotificationListResponse(BaseModel):

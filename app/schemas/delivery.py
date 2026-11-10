@@ -18,6 +18,13 @@ class DeliveryStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+class DeliveryEventPublic(BaseModel):
+    status: DeliveryStatus
+    at: datetime
+    by: str
+    note: str | None = None
+
+
 class DeliveryPublic(BaseModel):
     id: str
     order_id: str
@@ -27,9 +34,11 @@ class DeliveryPublic(BaseModel):
     carrier_name: str | None = None
     carrier_phone: str | None = None
     tracking_reference: str | None = None
-    events: list[dict]
+    events: list[DeliveryEventPublic]
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class DeliveryListResponse(BaseModel):

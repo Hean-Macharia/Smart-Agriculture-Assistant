@@ -93,22 +93,30 @@ class MemoryUsers:
 
 class MemoryNotifications:
     def __init__(self): self.items={}
+    @staticmethod
+    def public(doc):
+        if doc is None:return None
+        result=deepcopy(doc)
+        result.pop("recipient_phone",None)
+        result.pop("idempotency_key",None)
+        return result
     def create_pending(self,values):
         prior=next((x for x in self.items.values() if x["idempotency_key"]==values["idempotency_key"]),None)
         if prior:
             if any(prior[k]!=values[k] for k in ("recipient_user_id","event","message","recipient_phone")): raise ValueError("Idempotency key conflict")
-            return deepcopy(prior),False
-        d={**deepcopy(values),"id":str(ObjectId()),"status":"PENDING","created_at":datetime.now(timezone.utc)}
-        self.items[d["id"]]=d;return deepcopy(d),True
+            return self.public(prior),False
+        now=datetime.now(timezone.utc)
+        d={**deepcopy(values),"id":str(ObjectId()),"status":"PENDING","created_at":now,"updated_at":now}
+        self.items[d["id"]]=d;return self.public(d),True
     def claim(self,nid):
         d=self.items[nid]
         if d["status"]!="PENDING":return None
-        d["status"]="SENDING";return deepcopy(d)
+        d["status"]="SENDING";d["updated_at"]=datetime.now(timezone.utc);return self.public(d)
     def finish(self,nid,*,status,provider_reference):
-        d=self.items[nid];d.update(status=status,provider_reference=provider_reference);return deepcopy(d)
-    def get(self,nid): return deepcopy(self.items.get(nid))
+        d=self.items[nid];d.update(status=status,provider_reference=provider_reference,updated_at=datetime.now(timezone.utc));return self.public(d)
+    def get(self,nid): return self.public(self.items.get(nid))
     def list_for_user(self,uid,*,skip,limit):
-        d=[x for x in self.items.values() if x["recipient_user_id"]==uid];return deepcopy(d[skip:skip+limit]),len(d)
+        d=[x for x in self.items.values() if x["recipient_user_id"]==uid];return [self.public(x) for x in d[skip:skip+limit]],len(d)
 
 
 class CountingSmsProvider:
@@ -232,6 +240,7 @@ def test_sms_mock_is_explicit_and_idempotent(phase7_client):
     second=client.post("/notifications/send",headers=headers,json=body)
     assert first.status_code==second.status_code==200
     assert first.json()["notification"]["status"]=="SIMULATED"
+    assert "updated_at" in first.json()["notification"]
     assert "not delivered to a handset" in first.json()["detail"]
     assert len(notifications.items)==1
 

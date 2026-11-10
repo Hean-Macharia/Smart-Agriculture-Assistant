@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     app_name: str = "Smart Agriculture Advisory and Market Linkage API"
     app_env: str = "development"
     debug: bool = True
+    # Comma-separated browser origins; empty means no cross-origin browser access.
+    cors_allowed_origins: str = ""
 
     mongodb_uri: str = "mongodb://localhost:27017"
     database_name: str = "smart_agriculture"

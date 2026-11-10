@@ -26,8 +26,11 @@ class MemoryProfiles:
         self.data = {}
 
     def upsert_profile(self, user_id, values):
-        doc = self.data.get(user_id, {"id": str(ObjectId()), "user_id": user_id})
-        doc.update(deepcopy(values))
+        now = datetime.now(timezone.utc)
+        doc = self.data.get(user_id, {
+            "id": str(ObjectId()), "user_id": user_id, "created_at": now,
+        })
+        doc.update(deepcopy(values), updated_at=now)
         self.data[user_id] = doc
         return deepcopy(doc)
 
@@ -127,14 +130,21 @@ def farm_payload(name="Green Valley"):
 def test_farmer_profile_upsert_and_role_protection(phase3_client):
     client, active, _, _ = phase3_client
     data = {"county": "Kiambu", "sub_county": "Limuru", "location": "Ndeiya", "farm_size_acres": 2.5, "soil_type": "Clay loam", "irrigation_available": True, "crops_grown": ["maize", "beans"]}
-    assert client.put("/farmers/me", json=data).status_code == 200
+    farmer_response = client.put("/farmers/me", json=data)
+    assert farmer_response.status_code == 200
+    assert "created_at" in farmer_response.json() and "updated_at" in farmer_response.json()
     got = client.get("/farmers/me")
     assert got.status_code == 200 and got.json()["crops_grown"] == ["maize", "beans"]
+    assert "created_at" in got.json() and "updated_at" in got.json()
     active["user"] = active["user"].model_copy(update={"role": UserRole.BUYER, "id": BUYER_ID})
     assert client.get("/farmers/me").status_code == 403
     buyer_data = {"county": "Nairobi", "sub_county": "Westlands", "delivery_location": "Westlands", "organization_name": "Market"}
-    assert client.put("/buyers/me", json=buyer_data).status_code == 200
-    assert client.get("/buyers/me").json()["organization_name"] == "Market"
+    buyer_response = client.put("/buyers/me", json=buyer_data)
+    assert buyer_response.status_code == 200
+    assert "created_at" in buyer_response.json() and "updated_at" in buyer_response.json()
+    buyer_get = client.get("/buyers/me")
+    assert buyer_get.json()["organization_name"] == "Market"
+    assert "created_at" in buyer_get.json() and "updated_at" in buyer_get.json()
     assert client.post("/farms", json=farm_payload()).status_code == 403
 
 

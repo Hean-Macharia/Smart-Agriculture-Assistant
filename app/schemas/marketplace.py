@@ -58,6 +58,8 @@ class ProductPublic(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class ProductListResponse(BaseModel):
     items: list[ProductPublic]

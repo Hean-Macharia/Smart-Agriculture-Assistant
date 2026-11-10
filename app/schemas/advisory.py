@@ -46,6 +46,8 @@ class AdvisoryPublic(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class AdvisoryListResponse(BaseModel):
     items: list[AdvisoryPublic]
