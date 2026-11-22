@@ -43,7 +43,7 @@ class AdvisoryRepository:
             officer_query["$or"] = [{"crop_name": None}, {"crop_name": {"$regex": f"^{_escape(crop_name)}$", "$options": "i"}}]
         if county:
             officer_query["$and"] = officer_query.get("$and", []) + [{"$or": [{"county": None}, {"county": {"$regex": f"^{_escape(county)}$", "$options": "i"}}]}]
-        query = {"$or": [officer_query, {"kind": "WEATHER_RULE", "farmer_id": ObjectId(farmer_id)}]}
+        query = {"$or": [officer_query, {"farmer_id": ObjectId(farmer_id)}]}
         total = self.collection.count_documents(query)
         docs = self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
         return [self._public(doc) for doc in docs], total

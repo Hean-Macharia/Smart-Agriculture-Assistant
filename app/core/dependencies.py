@@ -22,6 +22,9 @@ from app.repositories.advisory_repository import AdvisoryRepository
 from app.repositories.market_price_repository import MarketPriceRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.disease_report_repository import DiseaseReportRepository
+from app.repositories.disease_followup_repository import DiseaseFollowupRepository
+from app.repositories.disease_treatment_repository import DiseaseTreatmentRepository
+from app.repositories.pesticide_repository import PesticideRepository
 from app.services.escrow_providers import EscrowProvider, get_escrow_provider
 from app.services.payment_providers import PaymentProvider, get_payment_provider
 from app.services.sms_providers import SmsProvider, get_sms_provider
@@ -109,6 +112,21 @@ def get_notification_repository() -> NotificationRepository:
 @lru_cache(maxsize=1)
 def get_disease_report_repository() -> DiseaseReportRepository:
     return DiseaseReportRepository(get_database()["disease_reports"])
+
+
+@lru_cache(maxsize=1)
+def get_pesticide_repository() -> PesticideRepository:
+    return PesticideRepository(get_database()["pesticide_records"])
+
+
+@lru_cache(maxsize=1)
+def get_disease_followup_repository() -> DiseaseFollowupRepository:
+    return DiseaseFollowupRepository(get_database()["disease_followups"])
+
+
+@lru_cache(maxsize=1)
+def get_disease_treatment_repository() -> DiseaseTreatmentRepository:
+    return DiseaseTreatmentRepository(get_database()["disease_treatments"])
 
 
 def payment_provider() -> PaymentProvider:

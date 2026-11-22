@@ -9,6 +9,10 @@
     {
       "key": "base_url",
       "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "disease_label",
+      "value": "Tomato___Early_blight"
     }
   ],
   "item": [
@@ -2901,6 +2905,277 @@
               }
             }
           ]
+        },
+        {
+          "name": "List source-backed disease guidance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/disease-detection/knowledge",
+            "description": "Public read-only educational catalogue. Returns 11 records that correspond to model labels. No pesticide recommendations are provided. Source checked does not mean a county extension officer reviewed a specific farm."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('11 supported model labels', () => pm.expect(body.total).to.eql(11));",
+                  "pm.test('all guidance records include a source and no chemical recommendation', () => body.items.forEach(item => { pm.expect(item.sources.length).to.be.above(0); pm.expect(item.chemical_guidance_available).to.eql(false); }));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Filter disease guidance by crop",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/disease-detection/knowledge?crop_name=Tomato",
+            "description": "Public. Filter by exact supported crop name: Maize, Potato, or Tomato."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('all returned entries match Tomato', () => pm.response.json().items.forEach(item => pm.expect(item.crop_name).to.eql('Tomato')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get guidance for a model label",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/disease-detection/knowledge/{{disease_label}}",
+            "description": "Public. Copy predicted_label from a screening response into the disease_label environment variable. URL-encode spaces if your Postman version does not encode substituted variables."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 for a supported class', () => pm.response.to.have.status(200));",
+                  "pm.test('response has display name and traceable source', () => { const body = pm.response.json(); pm.expect(body.display_name).to.be.a('string'); pm.expect(body.sources.length).to.be.above(0); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Record treatment activity (history only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{disease_idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/{{disease_report_id}}/treatments",
+            "description": "FARMER only. Requires a unique Idempotency-Key header (add it manually). Chemical history requires an approved PCPB evidence record matched to the predicted crop and disease. This endpoint records an action; it does not recommend treatment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"treatment_type\": \"CULTURAL\",\n  \"action_record\": \"Removed affected leaves and cleaned tools. This is a farmer-entered history note.\",\n  \"started_on\": \"2026-11-22\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created or safe idempotent replay',()=>pm.expect([200,201]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload follow-up crop photo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{disease_idempotency_key}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/{{disease_report_id}}/followups",
+            "description": "FARMER only. Select a new JPEG/PNG/WebP image. Add Idempotency-Key as a header. Runs the configured model; 503 is expected when model assets are unavailable. The original file is not persisted; only image hash and metadata are recorded. Same/different predicted labels do not prove improvement or worsening.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "observation",
+                  "type": "text",
+                  "value": "Add a brief observation (optional)."
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Screening created or model unavailable',()=>pm.expect([201,503]).to.include(pm.response.code));",
+                  "if(pm.response.code===201){const x=pm.response.json();pm.expect(x.comparison_note).to.be.a('string');pm.expect(x.image_sha256).to.have.length(64);}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get disease monitoring history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/{{disease_report_id}}/monitoring",
+            "description": "FARMER owner only. Returns original screening, follow-up screenings, and farmer-entered activity history."
+          }
+        },
+        {
+          "name": "Request officer review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/{{disease_report_id}}/review-request",
+            "description": "FARMER owner only. Changes case status to REVIEW_REQUESTED; repeated requests return 409. A request does not guarantee officer availability."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Review request recorded',()=>pm.expect([200,404,409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Officer review queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/review-queue?limit=20&offset=0",
+            "description": "AGRICULTURAL_OFFICER or ADMIN. Lists cases for which farmers requested review."
+          }
+        },
+        {
+          "name": "Officer responds to case",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/{{disease_report_id}}/review",
+            "description": "AGRICULTURAL_OFFICER or ADMIN. Response is appended to report review history; only REVIEW_REQUESTED cases are accepted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Reviewed the screening and shared general guidance. Arrange a field assessment if symptoms persist.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mark own monitoring case resolved",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/disease-detection/{{disease_report_id}}/resolve",
+            "description": "FARMER owner only. Records the farmer-reported status. It does not verify that the crop is disease-free; resolved cases cannot be reopened through this endpoint."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Resolution or expected conflict',()=>pm.expect([200,404,409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -3280,6 +3555,233 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Pesticide Evidence",
+      "item": [
+        {
+          "name": "Submit PCPB evidence draft (replace with verified source data)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_number\": \"REPLACE_WITH_PCPB_REGISTRATION_NUMBER\",\n  \"trade_name\": \"REPLACE_WITH_EXACT_PCPB_TRADE_NAME\",\n  \"formulation\": \"REPLACE_WITH_PCPB_FORMULATION\",\n  \"active_ingredients\": [\n    \"REPLACE_WITH_PCPB_ACTIVE_INGREDIENTS\"\n  ],\n  \"registered_uses\": [\n    \"REPLACE_WITH_EXACT_CROP_AND_USE_FROM_APPROVED_LABEL\"\n  ],\n  \"pcpb_record_url\": \"https://www.pcpb.go.ke/crops/\",\n  \"approved_label_url\": \"https://www.pcpb.go.ke/crops/\",\n  \"source_checked_on\": \"2026-11-22\",\n  \"source_reference\": \"Replace with current PCPB record and approved label reference\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/pesticide-records",
+            "description": "ADMIN or AGRICULTURAL_OFFICER. Do not send this placeholder body as a real product record. Replace every placeholder only after checking the current PCPB crop registration and linked approved label. This request creates a PENDING_REVIEW record; it does not authorize or recommend use."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('draft was created as pending review', () => { pm.response.to.have.status(201); const body = pm.response.json(); pm.expect(body.review_status).to.eql('PENDING_REVIEW'); pm.environment.set('pesticide_record_id', body.id); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List pending pesticide evidence (admin/officer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{officer_access_token}}"
+              }
+            ],
+            "url": "{{base_url}}/pesticide-records?review_status=PENDING_REVIEW&limit=20",
+            "description": "ADMIN or AGRICULTURAL_OFFICER. Review both the live PCPB record and the linked approved label outside the app before any admin approval."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('list response has pagination', () => { const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.total).to.be.a('number'); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Approve pesticide evidence (admin only, after PCPB review)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVE\",\n  \"review_note\": \"Replace with a factual audit note describing the PCPB entry and label checks.\",\n  \"registration_and_label_verified\": true,\n  \"source_checked_on\": \"2026-11-22\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/pesticide-records/{{pesticide_record_id}}/review",
+            "description": "ADMIN only. Send only after personally verifying the current registration and approved label. Approval makes the verified record visible in the farmer listing; it does not prescribe a dose or override the full label."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('review decision recorded', () => { pm.response.to.have.status(200); const body = pm.response.json(); pm.expect(body.review_status).to.eql('APPROVED'); pm.expect(body.review_events.length).to.be.above(0); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List approved label records (farmer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}"
+              }
+            ],
+            "url": "{{base_url}}/pesticide-records/approved?crop_name=Tomato&limit=20",
+            "description": "FARMER. Returns records that passed the administrator evidence-review workflow. It is a product reference list, not an automated treatment recommendation."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('only approved records returned', () => pm.response.json().items.forEach(item => pm.expect(item.review_status).to.eql('APPROVED')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Crop Planning",
+      "item": [
+        {
+          "name": "My crop stage checklist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crop-planning/crops/{{crop_id}}/calendar",
+            "description": "FARMER owner only. Stage order and sources for supported crops. Does not produce county planting dates or fixed day intervals."
+          }
+        },
+        {
+          "name": "Save general soil guidance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/crop-planning/soil-guidance",
+            "description": "FARMER only. Optional soil_test_date and soil_test_reference can be supplied. Creates a farm-linked education advisory; no fertilizer rate or product is generated.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"farm_id\": \"{{farm_id}}\",\n  \"crop_id\": \"{{crop_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pest Knowledge",
+      "item": [
+        {
+          "name": "List supported pest guidance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pest-knowledge",
+            "description": "Public read-only educational catalogue. Includes only source-backed entries; the disease model does not identify pests."
+          }
+        },
+        {
+          "name": "Get fall armyworm guidance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pest-knowledge/fall-armyworm",
+            "description": "Public, non-chemical, source-linked pest education. This is not an image identification endpoint."
+          }
+        },
+        {
+          "name": "Filter pest guidance by crop",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pest-knowledge?crop_name=Tomato",
+            "description": "Public. Returns entries for the requested crop where reviewed guidance exists."
+          }
+        },
+        {
+          "name": "Get one pest guide",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pest-knowledge/{{pest_slug}}",
+            "description": "Public source-backed educational detail. Use a slug from the list response, such as fall-armyworm or tomato-whitefly."
+          }
         }
       ]
     }

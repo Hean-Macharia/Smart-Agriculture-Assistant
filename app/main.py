@@ -2,11 +2,13 @@
 
 import logging
 import re
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pymongo.errors import PyMongoError
 
 from app.core.config import settings
@@ -28,6 +30,9 @@ from app.core.dependencies import (
     get_market_price_repository,
     get_notification_repository,
     get_disease_report_repository,
+    get_pesticide_repository,
+    get_disease_followup_repository,
+    get_disease_treatment_repository,
 )
 from app.routes.auth import router as auth_router
 from app.routes.buyers import router as buyers_router
@@ -48,6 +53,9 @@ from app.routes.advisory import router as advisory_router
 from app.routes.market_prices import router as market_prices_router
 from app.routes.notifications import router as notifications_router
 from app.routes.disease_detection import router as disease_detection_router
+from app.routes.pesticides import router as pesticides_router
+from app.routes.crop_planning import router as crop_planning_router
+from app.routes.pest_knowledge import router as pest_knowledge_router
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +79,9 @@ async def lifespan(_: FastAPI):
     get_market_price_repository.cache_clear()
     get_notification_repository.cache_clear()
     get_disease_report_repository.cache_clear()
+    get_pesticide_repository.cache_clear()
+    get_disease_followup_repository.cache_clear()
+    get_disease_treatment_repository.cache_clear()
     close_mongo_connection()
 
 
@@ -115,6 +126,14 @@ app.include_router(advisory_router)
 app.include_router(market_prices_router)
 app.include_router(notifications_router)
 app.include_router(disease_detection_router)
+app.include_router(pesticides_router)
+app.include_router(crop_planning_router)
+app.include_router(pest_knowledge_router)
+
+# Serve the built single-page frontend when a frontend build is present.
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
 
 @app.exception_handler(PyMongoError)

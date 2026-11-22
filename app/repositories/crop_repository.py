@@ -24,6 +24,10 @@ class CropRepository:
         }
         result = self.collection.insert_one(document)
         document["_id"] = result.inserted_id
+        # The response schema uses string IDs; MongoDB persists references as
+        # ObjectIds, so normalize this relationship before returning a newly
+        # inserted crop just as get() and list_for_owner() do.
+        document["farm_id"] = str(document["farm_id"])
         return public_document(document)
 
     def get(self, crop_id: str, *, active_only: bool = True) -> dict | None:

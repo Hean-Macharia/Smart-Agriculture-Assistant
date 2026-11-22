@@ -1,6 +1,6 @@
 # Smart Agriculture Advisory and Market Linkage API
 
-This FastAPI backend is being built in phases. **Phases 1 through 8 are implemented**: configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, an append-only transaction ledger, delivery tracking, dispute review, refund request recording, payout status/release handling, weather forecasts, farm-linked weather guidance, market price records/history, SMS adapter operations, and model-backed crop image screening. A trained disease model and matching label file must be supplied before inference can return predictions.
+This FastAPI backend is being built in phases. Core features through Phase 14 are implemented, including configuration and health, JWT authentication and role checks, farmer/buyer profiles, farms and crops, marketplace listings and stock-reserving orders, payment adapters, verified Daraja callbacks, internal escrow workflow, an append-only transaction ledger, delivery tracking, disputes, weather forecasts, market price records/history, SMS adapters, model-backed crop image screening and monitoring, source-linked crop/pest education, and farmer/officer frontend views. External provider availability and live database readiness must still be checked in the target environment; see the verification notes below. A trained disease model and matching label file are required for inference.
 
 ## Requirements and installation
 
@@ -16,17 +16,29 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-If `.env` already exists, keep it and add the settings listed below instead of overwriting it. Set `MONGODB_URI` and `DATABASE_NAME`. For Atlas, use the current cluster URI with an empty database path and `authSource=admin` for a standard Atlas database user; grant that database user `readWrite` on `DATABASE_NAME`. Set `JWT_SECRET_KEY` and `ADMIN_BOOTSTRAP_TOKEN` to separate random values of at least 32 characters. In production set `APP_ENV=production` and `DEBUG=false`. Browser frontends must set `CORS_ALLOWED_ORIGINS` to a comma-separated list of exact origins; it defaults to empty. Do not commit `.env` or paste its secrets into shared Postman environments. No default administrator password is embedded in the application.
+If `.env` already exists, keep it and add the settings listed below instead of overwriting it. Set `MONGODB_URI` and `DATABASE_NAME`. For Atlas, use the current cluster URI with an empty database path and `authSource=admin` for a standard Atlas database user; grant that database user `readWrite` on `DATABASE_NAME`. `MONGODB_SERVER_SELECTION_TIMEOUT_MS` defaults to 15000 ms (valid range 1000–60000) to allow SRV discovery, TLS and replica-set server selection on slower networks; only set a deployment override if needed. Set `JWT_SECRET_KEY` and `ADMIN_BOOTSTRAP_TOKEN` to separate random values of at least 32 characters. In production set `APP_ENV=production` and `DEBUG=false`. Browser frontends must set `CORS_ALLOWED_ORIGINS` to a comma-separated list of exact origins; it defaults to empty. Do not commit `.env` or paste its secrets into shared Postman environments. No default administrator password is embedded in the application.
 
 ### Disease model setup
 
-The endpoints are `POST /disease-detection/predict` (farmer JWT, multipart form field `image`) and `GET /disease-detection/mine` (farmer JWT). Upload JPEG, PNG, or WebP up to `DISEASE_IMAGE_MAX_BYTES` (8 MiB by default). The service decodes with OpenCV, resizes to `DISEASE_INPUT_SIZE` (224 by default), converts to RGB, and scales pixels to 0–1. It stores prediction metadata and the image SHA-256 in MongoDB, not the original image. The response says that the model output is preliminary screening, not a diagnosis.
+The endpoints are `POST /disease-detection/predict` (farmer JWT, multipart form field `image`), `GET /disease-detection/mine` (farmer JWT), and the public read-only `GET /disease-detection/knowledge` plus `GET /disease-detection/knowledge/{model_label}`. Upload JPEG, PNG, or WebP up to `DISEASE_IMAGE_MAX_BYTES` (8 MiB by default). The service decodes with Pillow, converts to RGB, resizes to `DISEASE_INPUT_SIZE` (224 by default), and scales pixels to 0–1. It stores prediction metadata and the image SHA-256 in MongoDB, not the original image. Prediction output is preliminary screening, not a diagnosis.
 
-Install TensorFlow when a trained model is available: `python -m pip install -r requirements-ml.txt`. Configure `DISEASE_MODEL_PATH` to a trusted Keras `.keras` model and `DISEASE_LABELS_PATH` to a JSON list in the model output order, for example `[\"Maize___Common_Rust\", \"Maize___Healthy\"]` (or `{\"classes\": [...]}`). The model must accept input shaped `(1, 224, 224, 3)` and output one score per label; adjust `DISEASE_INPUT_SIZE` to match its training input. No model weights or accuracy claims are bundled. Without model assets and TensorFlow, inference returns HTTP 503 rather than a fabricated prediction. TensorFlow is optional because it is a large runtime; its official pip guide lists Python 3.10–3.13 and native Windows CPU support, while GPU inference on Windows uses WSL2: [TensorFlow installation guide](https://www.tensorflow.org/install/pip).
+The knowledge catalogue provides general, non-chemical educational guidance for the 11 supported model labels, with source organization, title, URL, and reference location. `SOURCE_CHECKED` means the cited source was checked; it does not mean the content has been approved for a particular farm by a county extension officer. No pesticide/product recommendations are returned. Keep the warning and source links visible. Postman requests are in **Disease Detection > List source-backed disease guidance**, **Filter disease guidance by crop**, and **Get guidance for a model label**.
+
+Install TensorFlow when a trained model is available: `python -m pip install -r requirements-ml.txt`. Configure `DISEASE_MODEL_PATH` and `DISEASE_LABELS_PATH` to a trusted Keras `.keras` model and a JSON list in output-index order (or `{"classes": [...]}`). Relative paths are resolved from the backend project root. The model must accept `(1, 224, 224, 3)` and output one score per label. Local `uploads/models/` assets are excluded from Git; supply them through an approved deployment asset/disk strategy and configure absolute paths in production. The local smoke check verifies loading and inference only; it does not establish field accuracy. Without model assets or TensorFlow, inference returns HTTP 503 rather than a fabricated prediction. TensorFlow is optional because it is a large runtime; see the [TensorFlow installation guide](https://www.tensorflow.org/install/pip).
 
 For local MongoDB, defaults are `mongodb://localhost:27017` and database `smart_agriculture`. The API starts for diagnosis if MongoDB is down, but database-backed registration and login return unavailable until MongoDB responds.
 
 ## Run the API
+
+To activate `venv`, start the backend, and open the built frontend automatically:
+
+```powershell
+.\start.ps1
+```
+
+The launcher builds `frontend/dist` first if it is missing. That first build requires Node.js/npm. Once built, the frontend is served from the same origin as the API at http://127.0.0.1:8000. `Ctrl+C` stops the server.
+
+For backend-only development, use:
 
 ```powershell
 .\venv\Scripts\Activate.ps1
@@ -267,9 +279,19 @@ Phase 6 API tests use in-memory repositories and do not contact MongoDB or exter
 | POST | `/advisories/recommendations/weather` | FARMER | Fetch forecast and store transparent weather rules for an owned farm and crop |
 | PATCH | `/advisories/{advisory_id}` | Authoring officer or ADMIN | Edit or deactivate an officer-authored advisory |
 
-Weather uses OpenWeatherMap current conditions and its 5 day / 3 hour forecast API. Coordinates are supplied by the caller because existing farm records do not contain GPS coordinates. The weather provider key is required; missing configuration and provider failures return 503 without fabricated weather. See the [current weather API documentation](https://openweathermap.org/api/current) and [5 day forecast API documentation](https://openweathermap.org/api/forecast5).
+Weather uses OpenWeatherMap current conditions and its 5 day / 3 hour forecast API. Coordinates are supplied by the caller because existing farm records do not contain GPS coordinates. Successful responses are cached per rounded coordinate and provider key in process memory for `WEATHER_CACHE_TTL_SECONDS` (default 300, maximum 3600); `cache_hit` and `cache_valid_until` make freshness explicit. Set the TTL to `0` to disable caching. This is not a request-rate limiter and is not shared across multiple app workers. The provider key is required; missing configuration and provider failures return 503 without fabricated weather. See the [current weather API documentation](https://openweathermap.org/api/current) and [5 day forecast API documentation](https://openweathermap.org/api/forecast5).
 
 Weather recommendations are rule-based prompts, saved with the crop, farm, provider snapshot, and rules applied. The implemented rainfall rules ask farmers to check soil moisture/crop stage when forecast rainfall is low, or monitor drainage when it is high. They do not prescribe planting dates, irrigation volumes, pesticides, or guaranteed outcomes; farmers are directed to confirm decisions with county extension staff.
+
+### Crop stage calendar and soil guidance
+
+`GET /crop-planning/crops/{crop_id}/calendar` returns source-linked stage checklists for maize, tomato, and potato, only for the authenticated farmer's own crop and farm. This is stage-order guidance, not a county planting calendar: the project does not infer planting seasons or fixed day intervals. Other crop names return 404 until their own reviewed reference content is added.
+
+`POST /crop-planning/soil-guidance` saves general soil education in the farmer's advisory history. It recommends using a soil-test report with qualified extension support and does not calculate fertilizer rates, select a product, interpret soil chemistry, or prescribe an application schedule. This reflects Kenya's Ministry of Agriculture soil-management policy and training resources, which emphasize site-specific soil testing. Sources: [Agricultural Soil Management Policy 2023](https://kilimo.go.ke/wp-content/uploads/2025/02/Agricultural-Soil-Management-Policy-2023.pdf), [soil sampling and testing training manual](https://kilimo.go.ke/wp-content/uploads/2025/07/Training-Manual.pdf).
+
+### Pest education
+
+`GET /pest-knowledge` and `/pest-knowledge/{slug}` currently provide traceable, non-chemical educational entries for fall armyworm on maize and whitefly on tomato. This is not a pest image classifier, and the 11-label disease model is not used for pest detection. The initial entries refer to [KALRO maize integrated pest management guidance](https://www.kalro.org/navcdp/docs/MAIZE%20TIMPS%20Volume%202%20for%20upload.pdf), [FAO fall armyworm scouting guidance](https://www.fao.org/fileadmin/templates/fcc/Fall_Armyworm/web_FINAL-guidance-note-2.pdf), and [KALRO tomato whitefly TIMPs](https://www.kalro.org/navcdp/docs/tot_timps/TOMATO%20TIMPS.pdf). No chemical product or rate is generated.
 
 ### Market price APIs
 
@@ -309,8 +331,36 @@ For Africa's Talking Sandbox, set `SMS_PROVIDER=africas_talking`, `SMS_ENVIRONME
 |---|---|---|---|
 | POST | `/disease-detection/predict` | FARMER | Upload JPEG, PNG, or WebP in multipart field `image`; model-backed screening and saved metadata |
 | GET | `/disease-detection/mine` | FARMER | Paginated prediction history for the current farmer only |
+| GET | `/disease-detection/knowledge` | Public | List source-backed general guidance; optional `crop_name=Maize`, `Potato`, or `Tomato` |
+| GET | `/disease-detection/knowledge/{model_label}` | Public | Return the display name, symptoms, non-chemical general guidance, disclaimer, and source links for an exact model label |
 
-Prediction requires a trained Keras model and a JSON class list that exactly matches the model output order. Images are size-limited and rejected above 25 million pixels; only a content hash and metadata are stored in MongoDB. No model or image dataset is included, so missing model/dependency configuration returns HTTP 503. No prediction accuracy is claimed by this project. In Postman, use **Disease Detection > Predict from crop image**, choose a file, then run **List my screening history** after a successful 201 response. Until model assets are set up, the test accepts and explains a 503 response.
+Prediction requires a trained Keras model and a JSON class list that exactly matches the model output order. Images are size-limited and rejected above 25 million pixels; only a content hash and metadata are stored in MongoDB. Model assets are not version-controlled; if the deployment cannot load them, prediction returns HTTP 503. No field accuracy is claimed. In Postman, use **Disease Detection > Predict from crop image**, then **List my screening history**. Copy the returned `predicted_label` into `disease_label` and send **Get guidance for a model label** to view source links and non-chemical general guidance.
+
+`DISEASE_CONFIDENCE_THRESHOLD` (default `0.60`, range 0–1) marks low-confidence model outputs as uncertain. The API recommends a clearer image and officer review for uncertain results. This threshold is a user-experience rule, not a calibrated probability or diagnostic performance guarantee. The trained model's reported PlantVillage test metrics do not establish accuracy on Kenyan field images.
+
+### Phase 5 disease history and farmer monitoring
+
+Disease reports now support farmer-entered activity history, model-screened follow-up images, case resolution, and officer review requests. The original follow-up image bytes are not retained; a SHA-256 hash, file metadata, prediction, and optional observation are stored. A follow-up label comparison is only a comparison of model outputs; it does not independently prove the crop improved or worsened. No follow-up interval or recovery date is invented.
+
+| Method | Endpoint | Access | Behavior |
+|---|---|---|---|
+| POST | `/disease-detection/{report_id}/treatments` | Owning FARMER | Idempotently record a farmer-entered cultural, biological, chemical, or other activity. This is history, not a recommendation. Chemical records require an approved PCPB evidence record matching crop and disease. |
+| POST | `/disease-detection/{report_id}/followups` | Owning FARMER | Multipart `image` and optional observation; performs model screening and records hash/metadata. Requires `Idempotency-Key`. |
+| GET | `/disease-detection/{report_id}/monitoring` | Owning FARMER | Retrieve initial report, action history, follow-up history, and status. |
+| POST | `/disease-detection/{report_id}/review-request` | Owning FARMER | Request a review; records `REVIEW_REQUESTED`. Repeated request/resolved state returns 409. |
+| POST | `/disease-detection/{report_id}/resolve` | Owning FARMER | Mark the case resolved as a farmer-reported status. Does not validate disease absence. |
+| GET | `/disease-detection/review-queue` | AGRICULTURAL_OFFICER or ADMIN | Paginated farmer-requested reviews. |
+| PATCH | `/disease-detection/{report_id}/review` | AGRICULTURAL_OFFICER or ADMIN | Append an officer note and return the case to `OPEN`; repeated/non-pending review returns 409. |
+
+Follow-up and treatment writes use an `Idempotency-Key` header. The Postman folder contains each endpoint; select the farmer or officer token according to the request. A model-less deployment returns 503 for follow-up screening. Existing disease reports without case fields are treated as `OPEN` by the response schema; no migration deletes or rewrites existing records.
+
+### Phase 13 officer and administrator workspace
+
+The React workspace now includes a role-gated Officer/Admin desk. Officers and administrators can see farmer-requested disease-review cases, append review notes, and publish source-attributed advisories. Administrators also get record totals for users, disputes, payment history, and recorded market observations and can create agricultural-officer accounts. The server still enforces each endpoint's role; hiding a UI action is not treated as authorization. Payment totals are record counts, not balances or proof of settlement.
+
+### Phase 14 farmer frontend and language support
+
+The existing mobile-responsive React frontend now links the stage calendar, soil guidance, pest education, disease report history, activity logs, follow-up image screening, case review request/resolution, and the officer/admin desk to their backend APIs. A small English/Kiswahili interface toggle covers navigation and selected crop-health/planning labels. Knowledge-base content, model-provided text, some dialogs, and operational messages remain English; the UI is not yet fully translated. Existing responsive layout and reduced-motion CSS remain in place. Original follow-up images are not retained.
 
 Final local verification:
 
@@ -321,3 +371,7 @@ python -m compileall -q app tests
 ```
 
 The automated suite uses isolated in-memory repositories and mocked external providers; it does not call production M-Pesa, SMS, or weather services and does not use the production database. Import the collection and environment under `postman/` for manual API workflows. Never put production credentials into a shared Postman environment.
+
+### PCPB pesticide evidence workflow
+
+The project accepts PCPB evidence records only as drafts. `POST /pesticide-records` is available to an administrator or agricultural officer, and only an administrator may approve/reject a pending record through `PATCH /pesticide-records/{record_id}/review`. Approval requires explicit confirmation that both the current PCPB registration entry and its approved label were checked. Farmer-visible `GET /pesticide-records/approved` lists records only after approval. No pesticide rates or treatment prescriptions are generated. There are no seeded product records; the Postman examples are placeholders and must be replaced with verified data before submission.

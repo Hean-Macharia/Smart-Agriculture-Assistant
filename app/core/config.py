@@ -19,7 +19,10 @@ class Settings(BaseSettings):
 
     mongodb_uri: str = "mongodb://localhost:27017"
     database_name: str = "smart_agriculture"
-    mongodb_server_selection_timeout_ms: int = 2500
+    # Atlas SRV discovery plus TLS and replica-set selection can exceed 2.5 s
+    # on a cold client or slower network. Fail readiness only after a realistic
+    # selection window while keeping the limit configurable per deployment.
+    mongodb_server_selection_timeout_ms: int = Field(default=15000, ge=1000, le=60000)
 
     jwt_secret_key: str = Field(default="", repr=False)
     jwt_algorithm: Literal["HS256"] = "HS256"
@@ -35,6 +38,7 @@ class Settings(BaseSettings):
     mpesa_transaction_type: Literal["CustomerPayBillOnline", "CustomerBuyGoodsOnline"] = "CustomerPayBillOnline"
 
     weather_api_key: str = Field(default="", repr=False)
+    weather_cache_ttl_seconds: int = Field(default=300, ge=0, le=3600)
     sms_api_key: str = Field(default="", repr=False)
     sms_api_url: str = ""
     sms_sender_id: str = ""
@@ -46,6 +50,7 @@ class Settings(BaseSettings):
     disease_labels_path: str = ""
     disease_image_max_bytes: int = Field(default=8_388_608, ge=1024, le=25_000_000)
     disease_input_size: int = Field(default=224, ge=32, le=1024)
+    disease_confidence_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
 
     payment_provider: Literal["mock", "daraja"] = "mock"
     escrow_provider: Literal["mock", "partner"] = "mock"

@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.advisory import AdvisoryKind
 
@@ -24,9 +24,15 @@ class AdvisoryUpdate(BaseModel):
 class WeatherRecommendationRequest(BaseModel):
     farm_id: str = Field(pattern=r"^[0-9a-fA-F]{24}$")
     crop_id: str = Field(pattern=r"^[0-9a-fA-F]{24}$")
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def coordinates_must_be_paired(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be provided together")
+        return self
 
 
 class AdvisoryPublic(BaseModel):
@@ -54,3 +60,69 @@ class AdvisoryListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class CropCalendarStage(BaseModel):
+    stage: str
+    actions: list[str]
+
+
+class CropCalendarReference(BaseModel):
+    organization: str
+    title: str
+    url: str
+    checked_at: str
+
+
+class CropCalendarResponse(BaseModel):
+    crop_id: str
+    crop_name: str
+    farm_id: str
+    county: str
+    planting_date: str
+    schedule_type: str
+    message: str
+    stages: list[CropCalendarStage]
+    sources: list[CropCalendarReference]
+
+
+class SoilGuidanceRequest(BaseModel):
+    farm_id: str = Field(pattern=r"^[0-9a-fA-F]{24}$")
+    crop_id: str = Field(pattern=r"^[0-9a-fA-F]{24}$")
+    soil_test_date: date | None = None
+    soil_test_reference: str | None = Field(default=None, max_length=160)
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class SoilGuidanceResponse(AdvisoryPublic):
+    soil_test_recommended: bool
+    precise_rates_provided: bool
+    sources: list[CropCalendarReference]
+
+
+class PestKnowledgeSource(BaseModel):
+    organization: str
+    title: str
+    url: str
+
+
+class PestKnowledgePublic(BaseModel):
+    slug: str
+    common_name: str
+    scientific_name: str | None
+    crops_affected: list[str]
+    identification: list[str]
+    damage_signs: list[str]
+    prevention_and_nonchemical_management: list[str]
+    sources: list[PestKnowledgeSource]
+    chemical_guidance_available: bool
+    review_state: str
+    source_checked_at: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PestKnowledgeList(BaseModel):
+    items: list[PestKnowledgePublic]
+    total: int

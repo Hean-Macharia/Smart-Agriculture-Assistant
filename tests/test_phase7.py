@@ -206,6 +206,7 @@ def test_weather_route_returns_unavailable_without_key_and_maps_provider_payload
     monkeypatch.setattr(settings,"weather_api_key","")
     with pytest.raises(WeatherProviderError): fetch_weather_forecast(-1.0,36.0)
     monkeypatch.setattr(settings,"weather_api_key","safe-test-key")
+    service.clear_weather_cache()
     class Response:
         def __init__(self,payload):self.payload=payload
         def raise_for_status(self):pass
@@ -220,6 +221,32 @@ def test_weather_route_returns_unavailable_without_key_and_maps_provider_payload
     monkeypatch.setattr(service.httpx,"Client",Client)
     result=fetch_weather_forecast(-1.0,36.0)
     assert result.current.rainfall_mm==1.2 and result.forecast[0].rainfall_mm==2.1
+    assert result.cache_hit is False and result.cache_valid_until is not None
+    cached=fetch_weather_forecast(-1.0,36.0)
+    assert cached.cache_hit is True and cached.forecast == result.forecast
+
+
+def test_weather_cache_expires_and_can_be_disabled(monkeypatch):
+    import app.services.weather_service as service
+    from app.services.weather_service import fetch_weather_forecast
+    monkeypatch.setattr(settings,"weather_api_key","cache-key")
+    monkeypatch.setattr(settings,"weather_cache_ttl_seconds",0)
+    service.clear_weather_cache()
+    calls={"count":0}
+    now=datetime.now(timezone.utc)
+    value=WeatherResponse(latitude=1,longitude=2,source="fake test adapter",retrieved_at=now,current=WeatherObservation(observed_at=now,temperature_c=20,rainfall_mm=0,humidity_percent=60,conditions="clear"),forecast=[WeatherForecastPoint(forecast_at=now,temperature_c=20,rainfall_mm=0,humidity_percent=60,conditions="clear")])
+    def fetch(lat,lon,key):
+        calls["count"]+=1
+        return value
+    monkeypatch.setattr(service,"_fetch_weather_forecast_uncached",fetch)
+    fetch_weather_forecast(1,2)
+    fetch_weather_forecast(1,2)
+    assert calls["count"]==2
+    monkeypatch.setattr(settings,"weather_cache_ttl_seconds",60)
+    fetch_weather_forecast(1,2)
+    fetch_weather_forecast(1,2)
+    assert calls["count"]==3
+    service.clear_weather_cache()
 
 
 def test_weather_endpoint_requires_allowed_role_and_configured_key(phase7_client,monkeypatch):

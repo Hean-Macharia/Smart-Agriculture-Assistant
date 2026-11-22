@@ -43,7 +43,14 @@ def my_advisories(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, g
 @router.post("/recommendations/weather", response_model=AdvisoryPublic, status_code=status.HTTP_201_CREATED, summary="Create and store a crop-linked weather rule recommendation")
 def weather_recommendation(payload: WeatherRecommendationRequest, background_tasks: BackgroundTasks, user: UserPublic = Depends(require_roles(UserRole.FARMER)), repo: AdvisoryRepository = Depends(get_advisory_repository), farms: FarmRepository = Depends(get_farm_repository), crops: CropRepository = Depends(get_crop_repository)):
     try:
-        weather = fetch_weather_forecast(payload.latitude, payload.longitude)
+        farm = farms.get(payload.farm_id)
+        if farm is None or farm["owner_id"] != user.id:
+            raise AdvisoryAccessError
+        latitude = payload.latitude if payload.latitude is not None else farm.get("latitude")
+        longitude = payload.longitude if payload.longitude is not None else farm.get("longitude")
+        if latitude is None or longitude is None:
+            raise HTTPException(status_code=422, detail="Save this farm's location first, or provide coordinates for this request")
+        weather = fetch_weather_forecast(latitude, longitude)
         result = create_weather_recommendation(repository=repo, farms=farms, crops=crops, farmer_id=user.id, farm_id=payload.farm_id, crop_id=payload.crop_id, weather=weather)
         background_tasks.add_task(dispatch_sms_event, recipient_user_id=user.id, event="AGRICULTURAL_ADVISORY", event_id=result["id"], message=f"New weather guidance is available for {result['crop_name']} on your farm. Review it in your account.")
         return AdvisoryPublic.model_validate(result)

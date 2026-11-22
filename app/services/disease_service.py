@@ -3,6 +3,7 @@
 import hashlib
 from pathlib import Path
 
+from app.core.config import settings
 from app.ml.disease_model import predict_disease
 from app.repositories.disease_report_repository import DiseaseReportRepository
 
@@ -11,6 +12,7 @@ DISCLAIMER = "AI model output is a preliminary screening result, not a guarantee
 
 def create_disease_report(repository: DiseaseReportRepository, *, farmer_id: str, filename: str, content_type: str, image_bytes: bytes):
     label, confidence = predict_disease(image_bytes)
+    threshold = settings.disease_confidence_threshold
     safe_filename = Path(filename or "crop-image").name[:160]
     return repository.create({
         "farmer_id": farmer_id,
@@ -20,5 +22,7 @@ def create_disease_report(repository: DiseaseReportRepository, *, farmer_id: str
         "image_sha256": hashlib.sha256(image_bytes).hexdigest(),
         "predicted_label": label,
         "confidence": confidence,
+        "confidence_threshold": threshold,
+        "is_uncertain": confidence < threshold,
         "disclaimer": DISCLAIMER,
     })

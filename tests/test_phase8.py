@@ -91,12 +91,25 @@ def test_prediction_endpoint_records_history_and_disclaimer(disease_client, monk
     result = response.json()
     assert result["predicted_label"] == "Maize___Healthy"
     assert result["confidence"] == pytest.approx(0.91)
+    assert result["is_uncertain"] is False
     assert "not a guaranteed diagnosis" in result["disclaimer"]
     assert len(repository.items) == 1
     assert repository.items[0]["image_sha256"]
     history = client.get("/disease-detection/mine")
     assert history.status_code == 200 and history.json()["total"] == 1
     assert history.json()["items"][0]["id"] == result["id"]
+
+
+def test_prediction_endpoint_flags_low_confidence_and_suggests_clearer_image(disease_client, monkeypatch):
+    client, _, _ = disease_client
+    monkeypatch.setattr(disease_service, "predict_disease", lambda _: ("Maize___Healthy", 0.42))
+    monkeypatch.setattr("app.services.disease_service.settings.disease_confidence_threshold", 0.60)
+    response = client.post("/disease-detection/predict", files={"image": ("leaf.png", png_bytes(), "image/png")})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["is_uncertain"] is True
+    assert "clearer photo" in body["uncertainty_message"]
+    assert "not a guaranteed diagnosis" in body["disclaimer"]
 
 
 def test_prediction_endpoint_rejects_wrong_role(disease_client):
@@ -160,3 +173,44 @@ def test_model_inference_rejects_output_label_mismatch(monkeypatch):
     monkeypatch.setattr(inference, "load_class_labels", lambda: ("one label",))
     with pytest.raises(DiseaseModelUnavailable):
         predict_disease(b"image bytes")
+
+
+def test_relative_label_path_resolves_from_backend_root(monkeypatch, tmp_path):
+    import json
+    import app.ml.model_loader as loader
+
+    label_file = tmp_path / "uploads" / "models" / "labels.json"
+    label_file.parent.mkdir(parents=True)
+    label_file.write_text(json.dumps(["Maize___Healthy"]), encoding="utf-8")
+    monkeypatch.setattr(loader, "BACKEND_ROOT", tmp_path)
+    monkeypatch.setattr(loader.settings, "disease_labels_path", "uploads/models/labels.json")
+    loader.load_class_labels.cache_clear()
+    try:
+        assert loader.load_class_labels() == ("Maize___Healthy",)
+    finally:
+        loader.load_class_labels.cache_clear()
+
+
+def test_source_backed_knowledge_covers_exactly_all_model_labels():
+    import json
+    from pathlib import Path
+    from app.services.disease_knowledge_service import list_disease_knowledge
+
+    labels = json.loads(Path("uploads/models/crop_disease_labels.json").read_text(encoding="utf-8"))
+    knowledge = list_disease_knowledge()
+    assert [entry["model_label"] for entry in knowledge] == labels
+    assert all(entry["sources"] and entry["review_state"] == "SOURCE_CHECKED" for entry in knowledge)
+    assert all(entry["chemical_guidance_available"] is False for entry in knowledge)
+
+
+def test_disease_knowledge_api_is_public_filterable_and_has_not_found():
+    with TestClient(app) as client:
+        all_records = client.get("/disease-detection/knowledge")
+        tomatoes = client.get("/disease-detection/knowledge?crop_name=Tomato")
+        unknown = client.get("/disease-detection/knowledge/not-a-supported-label")
+
+    assert all_records.status_code == 200
+    assert all_records.json()["total"] == 11
+    assert len(tomatoes.json()["items"]) == 4
+    assert all(item["crop_name"] == "Tomato" for item in tomatoes.json()["items"])
+    assert unknown.status_code == 404

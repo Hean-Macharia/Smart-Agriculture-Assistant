@@ -24,5 +24,7 @@ class WeatherResponse(BaseModel):
     longitude: float
     source: str
     retrieved_at: datetime
+    cache_hit: bool = False
+    cache_valid_until: datetime | None = None
     current: WeatherObservation
     forecast: list[WeatherForecastPoint]
