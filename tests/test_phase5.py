@@ -411,6 +411,8 @@ def test_provider_payout_failure_is_recorded_then_retry_confirms_payout(phase5_c
 def test_daraja_production_uses_safaricom_urls_and_never_logs_credentials(monkeypatch):
     import app.services.payment_providers as adapters
 
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "payment_provider", "daraja")
     monkeypatch.setattr(settings, "mpesa_environment", "production")
     monkeypatch.setattr(settings, "mpesa_consumer_key", "test-consumer-key")
     monkeypatch.setattr(settings, "mpesa_consumer_secret", "test-consumer-secret")

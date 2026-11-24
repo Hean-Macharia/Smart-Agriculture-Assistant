@@ -13,6 +13,7 @@ class NotificationRepository:
         self.collection = collection
         self.collection.create_index("idempotency_key", unique=True, name="uq_notification_idempotency")
         self.collection.create_index([("recipient_user_id", 1), ("created_at", -1)], name="ix_notifications_recipient_created")
+        self.collection.create_index("provider_reference", sparse=True, name="ix_notifications_provider_reference")
 
     @staticmethod
     def _public(doc):
@@ -47,6 +48,15 @@ class NotificationRepository:
 
     def get(self, notification_id: str):
         return self._public(self.collection.find_one({"_id": ObjectId(notification_id)}))
+
+    def update_delivery_receipt(self, provider_reference: str, status: str):
+        if status not in {"DELIVERED", "FAILED", "EXPIRED"}:
+            return None
+        return self._public(self.collection.find_one_and_update(
+            {"provider_reference": provider_reference, "status": "ACCEPTED"},
+            {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
+            return_document=ReturnDocument.AFTER,
+        ))
 
     def list_for_user(self, user_id: str, *, skip: int, limit: int):
         query = {"recipient_user_id": ObjectId(user_id)}

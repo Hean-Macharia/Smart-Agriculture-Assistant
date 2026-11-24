@@ -4,16 +4,21 @@ import logging
 import re
 from pathlib import Path
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo.errors import PyMongoError
+from bson import ObjectId
 
 from app.core.config import settings
 from app.core.database import close_mongo_connection
+from app.core.database import get_database
+from app.core.security import decode_access_token
 from app.core.dependencies import (
+    get_admin_repository,
     get_buyer_repository,
     get_crop_repository,
     get_farm_repository,
@@ -29,6 +34,7 @@ from app.core.dependencies import (
     get_advisory_repository,
     get_market_price_repository,
     get_notification_repository,
+    get_sms_preferences_repository,
     get_disease_report_repository,
     get_pesticide_repository,
     get_disease_followup_repository,
@@ -56,6 +62,7 @@ from app.routes.disease_detection import router as disease_detection_router
 from app.routes.pesticides import router as pesticides_router
 from app.routes.crop_planning import router as crop_planning_router
 from app.routes.pest_knowledge import router as pest_knowledge_router
+from app.routes.admin import router as admin_router
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +71,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     yield
     get_user_repository.cache_clear()
+    get_admin_repository.cache_clear()
     get_farmer_repository.cache_clear()
     get_buyer_repository.cache_clear()
     get_farm_repository.cache_clear()
@@ -78,6 +86,7 @@ async def lifespan(_: FastAPI):
     get_advisory_repository.cache_clear()
     get_market_price_repository.cache_clear()
     get_notification_repository.cache_clear()
+    get_sms_preferences_repository.cache_clear()
     get_disease_report_repository.cache_clear()
     get_pesticide_repository.cache_clear()
     get_disease_followup_repository.cache_clear()
@@ -129,6 +138,47 @@ app.include_router(disease_detection_router)
 app.include_router(pesticides_router)
 app.include_router(crop_planning_router)
 app.include_router(pest_knowledge_router)
+app.include_router(admin_router)
+
+
+@app.middleware("http")
+async def append_admin_audit_event(request: Request, call_next):
+    response = await call_next(request)
+    method = request.method.upper()
+    path = request.url.path
+    admin_mutations = (
+        path == "/auth/admin/users" and method == "POST"
+        or path == "/notifications/send" and method == "POST"
+        or path == "/advisories" and method == "POST"
+        or path.startswith("/advisories/") and method == "PATCH"
+        or path.startswith("/disputes/") and path.endswith("/review") and method == "PATCH"
+        or path.startswith("/disease-detection/") and path.endswith("/review") and method == "PATCH"
+        or path.startswith("/pesticide-records/") and path.endswith("/review") and method == "PATCH"
+        or path.startswith("/market-prices/") and path.endswith("/revision") and method == "POST"
+        or path == "/market-prices" and method == "POST"
+        or path.startswith("/escrow/") and path.endswith("/release") and method == "POST"
+    )
+    # Dependency overrides are active in the isolated test suite; keep those tests
+    # detached from the configured live database.
+    if admin_mutations and not app.dependency_overrides:
+        authorization = request.headers.get("authorization", "")
+        token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        claims = decode_access_token(token) if token else None
+        actor_id = claims.get("sub") if claims and claims.get("role") == "ADMIN" else None
+        if actor_id and ObjectId.is_valid(actor_id):
+            try:
+                get_database()["audit_logs"].insert_one({
+                    "actor_id": ObjectId(actor_id),
+                    "action": f"{method} {path}",
+                    "method": method,
+                    "resource": path[:200],
+                    "status_code": response.status_code,
+                    "succeeded": 200 <= response.status_code < 400,
+                    "timestamp": datetime.now(timezone.utc),
+                })
+            except PyMongoError as exc:
+                logger.error("Admin audit event write failed: type=%s, code=%s", type(exc).__name__, getattr(exc, "code", None))
+    return response
 
 # Serve the built single-page frontend when a frontend build is present.
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"

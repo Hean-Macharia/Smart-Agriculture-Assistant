@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from app.models.notification import NotificationStatus
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.sms_repository import SmsPreferencesRepository
 from app.services.sms_providers import SmsProvider, SmsProviderError
+from app.services.sms_templates import render_event_message
+from app.utils.phones import normalize_kenyan_mobile
 
 logger = logging.getLogger(__name__)
 
@@ -17,19 +20,28 @@ class NotificationStateError(Exception):
     pass
 
 
+class NotificationConsentRequiredError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class NotificationOutcome:
     notification: dict
     detail: str
 
 
-def send_notification(*, recipient_user_id: str, event: str, message: str, idempotency_key: str, users: UserRepository, notifications: NotificationRepository, provider: SmsProvider) -> NotificationOutcome:
+def send_notification(*, recipient_user_id: str, event: str, message: str, idempotency_key: str, users: UserRepository, notifications: NotificationRepository, preferences: SmsPreferencesRepository, provider: SmsProvider) -> NotificationOutcome:
     recipient = users.get_by_id(recipient_user_id)
     if recipient is None or not recipient.get("is_active"):
         raise NotificationAccessError
-    phone = recipient.get("phone")
-    if not phone:
+    try:
+        phone = normalize_kenyan_mobile(recipient.get("phone", ""))
+    except (TypeError, ValueError):
         raise NotificationStateError("The recipient account has no phone number")
+    settings_for_sms = preferences.get_for_user(recipient_user_id, phone)
+    if not settings_for_sms["consented"] or event not in [item.value for item in settings_for_sms["categories"]]:
+        raise NotificationConsentRequiredError
+    message = render_event_message(event, settings_for_sms["language"], message)
     values = {
         "recipient_user_id": recipient_user_id,
         "recipient_phone": phone,
@@ -69,6 +81,7 @@ def dispatch_sms_event(*, recipient_user_id: str, event: str, event_id: str, mes
     try:
         # Lazy imports avoid coupling the notification layer to app construction.
         from app.core.dependencies import get_notification_repository, get_user_repository, sms_provider
+        from app.core.dependencies import get_sms_preferences_repository
 
         send_notification(
             recipient_user_id=recipient_user_id,
@@ -77,6 +90,7 @@ def dispatch_sms_event(*, recipient_user_id: str, event: str, event_id: str, mes
             idempotency_key=f"auto:{event}:{event_id}:{recipient_user_id}"[:128],
             users=get_user_repository(),
             notifications=get_notification_repository(),
+            preferences=get_sms_preferences_repository(),
             provider=sms_provider(),
         )
     except Exception as exc:

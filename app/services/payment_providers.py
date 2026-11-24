@@ -9,7 +9,7 @@ from typing import Protocol
 
 import httpx
 
-from app.core.config import settings
+from app.core.config import settings, validate_payment_settings
 
 
 class PaymentProviderError(RuntimeError):
@@ -47,17 +47,31 @@ class DarajaPaymentProvider:
     name = "daraja"
 
     def __init__(self):
+        try:
+            validate_payment_settings(settings)
+        except ValueError as exc:
+            # Never include settings or provider exception text in this error.
+            raise PaymentProviderError("Daraja payment configuration is unsafe or incomplete") from exc
         self.base_url = "https://api.safaricom.co.ke" if settings.mpesa_environment == "production" else "https://sandbox.safaricom.co.ke"
         self._token: str | None = None
         self._token_expiry = datetime.min.replace(tzinfo=timezone.utc)
         self._lock = Lock()
 
     def _credentials(self) -> tuple[str, str, str, str, str]:
-        key = settings.mpesa_consumer_key.strip()
-        secret = settings.mpesa_consumer_secret.strip()
-        shortcode = settings.mpesa_shortcode.strip()
-        passkey = settings.mpesa_passkey.strip()
-        callback = settings.mpesa_callback_url.strip()
+        if settings.mpesa_environment == "sandbox":
+            key = settings.mpesa_sandbox_consumer_key.strip()
+            secret = settings.mpesa_sandbox_consumer_secret.strip()
+            shortcode = settings.mpesa_sandbox_shortcode.strip()
+            passkey = settings.mpesa_sandbox_passkey.strip()
+            callback = settings.mpesa_sandbox_callback_url.strip()
+        else:
+            # Existing production deployments may continue using the generic
+            # MPESA_* names until migrated; these names are never used in sandbox.
+            key = (settings.mpesa_production_consumer_key or settings.mpesa_consumer_key).strip()
+            secret = (settings.mpesa_production_consumer_secret or settings.mpesa_consumer_secret).strip()
+            shortcode = (settings.mpesa_production_shortcode or settings.mpesa_shortcode).strip()
+            passkey = (settings.mpesa_production_passkey or settings.mpesa_passkey).strip()
+            callback = (settings.mpesa_production_callback_url or settings.mpesa_callback_url).strip()
         if not all((key, secret, shortcode, passkey, callback)):
             raise PaymentProviderError("Daraja credentials and callback URL are not configured")
         if settings.mpesa_environment == "production" and not callback.startswith("https://"):
@@ -157,6 +171,10 @@ class DarajaPaymentProvider:
 
 
 def get_payment_provider() -> PaymentProvider:
+    try:
+        validate_payment_settings(settings)
+    except ValueError as exc:
+        raise PaymentProviderError("Payment provider configuration is unsafe or incomplete") from exc
     if settings.payment_provider == "daraja":
         return DarajaPaymentProvider()
     return MockPaymentProvider()

@@ -7,6 +7,7 @@ from app.core.database import get_database
 from app.core.security import TokenConfigurationError, decode_access_token
 from app.models.user import UserRole
 from app.repositories.user_repository import UserRepository
+from app.repositories.admin_repository import AdminRepository
 from app.repositories.buyer_repository import BuyerRepository
 from app.repositories.crop_repository import CropRepository
 from app.repositories.farm_repository import FarmRepository
@@ -21,6 +22,7 @@ from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.advisory_repository import AdvisoryRepository
 from app.repositories.market_price_repository import MarketPriceRepository
 from app.repositories.notification_repository import NotificationRepository
+from app.repositories.sms_repository import SmsPreferencesRepository
 from app.repositories.disease_report_repository import DiseaseReportRepository
 from app.repositories.disease_followup_repository import DiseaseFollowupRepository
 from app.repositories.disease_treatment_repository import DiseaseTreatmentRepository
@@ -36,6 +38,11 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 @lru_cache(maxsize=1)
 def get_user_repository() -> UserRepository:
     return UserRepository(get_database()["users"])
+
+
+@lru_cache(maxsize=1)
+def get_admin_repository() -> AdminRepository:
+    return AdminRepository(get_database())
 
 
 @lru_cache(maxsize=1)
@@ -107,6 +114,11 @@ def get_market_price_repository() -> MarketPriceRepository:
 @lru_cache(maxsize=1)
 def get_notification_repository() -> NotificationRepository:
     return NotificationRepository(get_database()["notifications"])
+
+
+@lru_cache(maxsize=1)
+def get_sms_preferences_repository() -> SmsPreferencesRepository:
+    return SmsPreferencesRepository(get_database())
 
 
 @lru_cache(maxsize=1)

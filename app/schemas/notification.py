@@ -36,3 +36,31 @@ class NotificationListResponse(BaseModel):
 class NotificationSendResponse(BaseModel):
     notification: NotificationPublic
     detail: str
+
+
+class SmsPreferencesUpdate(BaseModel):
+    consented: bool
+    language: str = Field(default="en", pattern=r"^(en|sw)$")
+    categories: list[NotificationEvent] = Field(default_factory=list, max_length=20)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SmsPreferencesPublic(BaseModel):
+    phone_number: str
+    consented: bool
+    consented_at: datetime | None = None
+    opted_out_at: datetime | None = None
+    language: str
+    categories: list[NotificationEvent]
+    phone_verified: bool
+    consent_history: list[dict]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SmsDeliveryReceipt(BaseModel):
+    message_id: str = Field(min_length=1, max_length=160)
+    status: str = Field(pattern=r"^(DELIVERED|FAILED|EXPIRED)$")
+
+    model_config = ConfigDict(extra="forbid")

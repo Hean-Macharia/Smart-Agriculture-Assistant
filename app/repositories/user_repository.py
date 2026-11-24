@@ -58,6 +58,9 @@ class UserRepository:
     def get_by_email(self, email: str) -> dict | None:
         return self.collection.find_one({"email": email})
 
+    def get_by_phone(self, phone: str) -> dict | None:
+        return self.collection.find_one({"phone": phone})
+
     def get_by_id(self, user_id: str) -> dict | None:
         try:
             object_id = ObjectId(user_id)
