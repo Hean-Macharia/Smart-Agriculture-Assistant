@@ -9,6 +9,7 @@ class UssdRequest:
     session_id: str
     phone_number: str
     text: str
+    language: str = "en"
 
 
 class UssdProvider(Protocol):
@@ -17,7 +18,8 @@ class UssdProvider(Protocol):
     def respond(self, request: UssdRequest) -> str: ...
 
 
-def render_menu(request: UssdRequest, *, language: str = "en") -> str:
+def render_menu(request: UssdRequest) -> str:
+    language = request.language
     kiswahili = language == "sw"
     choices = request.text.split("*") if request.text else []
     if not choices or choices[-1] == "":

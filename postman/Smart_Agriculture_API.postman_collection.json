@@ -1141,6 +1141,32 @@
       "name": "Marketplace",
       "item": [
         {
+          "name": "Upload a product photo (development only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{base_url}}/marketplace/products/images",
+            "description": "FARMER only; development/test local storage. Choose JPEG, PNG or WebP up to configured limit. Response URL can be placed in product_images when creating a listing. Production returns 503 until object storage is configured."
+          },
+          "response": []
+        },
+        {
           "name": "Create product listing",
           "request": {
             "method": "POST",
@@ -3252,6 +3278,165 @@
               }
             }
           ]
+        },
+        {
+          "name": "Get my SMS preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications/preferences",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "preferences"
+              ]
+            },
+            "description": "Authenticated. Shows consent state; new accounts default to no SMS consent.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update SMS preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notifications/preferences",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "preferences"
+              ]
+            },
+            "description": "Requires explicit user choice. Use consented=false to opt out. Phone is taken from the authenticated account.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consented\": true,\n  \"language\": \"en\",\n  \"categories\": [\n    \"WEATHER_ALERT\",\n    \"MARKET_PRICE\",\n    \"AGRICULTURAL_ADVISORY\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Inbound SMS commands (development/provider callback)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-SMS-Webhook-Token",
+                "value": "{{sms_webhook_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notifications/inbound/africas-talking",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "inbound",
+                "africas-talking"
+              ]
+            },
+            "description": "Configure SMS_WEBHOOK_SECRET on the server and set sms_webhook_token only in a private local Postman environment. Africa’s Talking sends form fields: from, text, id. Sandbox simulator is not handset delivery. For a local manual simulation, the request form is included; it will work only if your local test secret is configured and the token remains private.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "from",
+                  "value": "0712345678",
+                  "type": "text"
+                },
+                {
+                  "key": "text",
+                  "value": "HELP",
+                  "type": "text"
+                },
+                {
+                  "key": "id",
+                  "value": "provider-message-reference-001",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "SMS delivery receipt callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-SMS-Signature",
+                "value": "{{sms_callback_signature}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notifications/callback/delivery",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "callback",
+                "delivery"
+              ]
+            },
+            "description": "Signature is HMAC-SHA256 over the exact raw JSON bytes with SMS_WEBHOOK_SECRET. A real provider must support this signature contract; no live provider was verified.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message_id\": \"provider-reference-from-accepted-send\",\n  \"status\": \"DELIVERED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -4073,6 +4258,75 @@
                 "admin",
                 "settings"
               ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List PCPB evidence for admin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/pesticides?limit=20&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "pesticides?limit=20&offset=0"
+              ]
+            },
+            "description": "ADMIN only. Supports review_status filter. Returns source evidence records and submitter identity.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "USSD",
+      "item": [
+        {
+          "name": "Simulate USSD menu (development only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/ussd/mock/session",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "ussd",
+                "mock",
+                "session"
+              ]
+            },
+            "description": "Development simulator only; response includes live_gateway_connected=false. A carrier short code and signed gateway integration are still required for actual USSD.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"postman-session-001\",\n  \"phone_number\": \"0712345678\",\n  \"text\": \"\",\n  \"language\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []

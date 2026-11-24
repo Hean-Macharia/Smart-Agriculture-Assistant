@@ -5,7 +5,7 @@ from bson import ObjectId
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.core.dependencies import get_advisory_repository, get_current_user, get_crop_repository, get_farm_repository, get_market_price_repository, get_notification_repository, get_user_repository, sms_provider
+from app.core.dependencies import get_advisory_repository, get_current_user, get_crop_repository, get_farm_repository, get_market_price_repository, get_notification_repository, get_sms_preferences_repository, get_user_repository, sms_provider
 from app.main import app
 from app.models.user import UserRole
 from app.schemas.user import UserPublic
@@ -119,6 +119,12 @@ class MemoryNotifications:
         d=[x for x in self.items.values() if x["recipient_user_id"]==uid];return [self.public(x) for x in d[skip:skip+limit]],len(d)
 
 
+class MemorySmsPreferences:
+    def get_for_user(self,uid,phone):
+        from app.models.notification import NotificationEvent
+        return {"phone_number":"+254712345678","consented":True,"phone_verified":True,"language":"en","categories":[event.value for event in NotificationEvent]}
+
+
 class CountingSmsProvider:
     name="http"
     def __init__(self,fail=False): self.calls=0;self.fail=fail
@@ -139,6 +145,7 @@ def phase7_client(monkeypatch):
     app.dependency_overrides[get_crop_repository]=MemoryCrops
     app.dependency_overrides[get_user_repository]=MemoryUsers
     app.dependency_overrides[get_notification_repository]=lambda:notifications
+    app.dependency_overrides[get_sms_preferences_repository]=MemorySmsPreferences
     monkeypatch.setattr(settings,"sms_provider","mock")
     monkeypatch.setattr(settings,"app_env","test")
     with TestClient(app) as client:
@@ -295,7 +302,9 @@ def test_automatic_sms_event_dispatch_is_opt_in_and_idempotent(phase7_client,mon
     app.dependency_overrides[sms_provider]=lambda:provider
     monkeypatch.setattr(dependencies,"get_user_repository",MemoryUsers)
     monkeypatch.setattr(dependencies,"get_notification_repository",lambda:notifications)
+    monkeypatch.setattr(dependencies,"get_sms_preferences_repository",MemorySmsPreferences)
     monkeypatch.setattr(dependencies,"sms_provider",lambda:provider)
+    monkeypatch.setattr(dependencies,"get_sms_preferences_repository",MemorySmsPreferences)
     monkeypatch.setattr(settings,"sms_provider","http")
     monkeypatch.setattr(settings,"sms_auto_dispatch",True)
     dispatch_sms_event(recipient_user_id=BUYER,event="REGISTRATION",event_id="registered-user-1",message="Your account was created.")
@@ -306,8 +315,10 @@ def test_automatic_sms_event_dispatch_is_opt_in_and_idempotent(phase7_client,mon
 
 def test_generic_http_sms_adapter_uses_https_and_reports_provider_acceptance(monkeypatch):
     import app.services.sms_providers as sms
-    monkeypatch.setattr(settings,"sms_api_url","https://sms.example.test/v1/send")
-    monkeypatch.setattr(settings,"sms_api_key","unit-test-secret")
+    monkeypatch.setattr(settings,"sms_provider","http")
+    monkeypatch.setattr(settings,"sms_environment","sandbox")
+    monkeypatch.setattr(settings,"sms_sandbox_api_url","https://sms.example.test/v1/send")
+    monkeypatch.setattr(settings,"sms_sandbox_api_key","unit-test-secret")
     monkeypatch.setattr(settings,"sms_sender_id","AGRI")
     calls=[]
     class Response:
@@ -321,7 +332,7 @@ def test_generic_http_sms_adapter_uses_https_and_reports_provider_acceptance(mon
     assert calls[0][1]["headers"]["Idempotency-Key"]=="sms-adapter-test-001"
     assert calls[0][1]["json"]["sender_id"]=="AGRI"
     assert "unit-test-secret" not in repr(result)
-    monkeypatch.setattr(settings,"sms_api_url","http://sms.example.test/send")
+    monkeypatch.setattr(settings,"sms_sandbox_api_url","http://sms.example.test/send")
     with pytest.raises(SmsProviderError):
         HttpSmsProvider().send_sms(to="0712345678",message="Test",idempotency_key="sms-adapter-test-002")
 
@@ -329,8 +340,9 @@ def test_generic_http_sms_adapter_uses_https_and_reports_provider_acceptance(mon
 def test_africas_talking_sandbox_adapter_uses_sandbox_and_marks_simulated(monkeypatch):
     import app.services.sms_providers as sms
     monkeypatch.setattr(settings,"sms_environment","sandbox")
-    monkeypatch.setattr(settings,"sms_username","sandbox")
-    monkeypatch.setattr(settings,"sms_api_key","unit-test-key")
+    monkeypatch.setattr(settings,"sms_provider","africas_talking")
+    monkeypatch.setattr(settings,"sms_sandbox_username","sandbox")
+    monkeypatch.setattr(settings,"sms_sandbox_api_key","unit-test-key")
     monkeypatch.setattr(settings,"sms_sender_id","")
     calls=[]
     class Response:
@@ -350,11 +362,13 @@ def test_africas_talking_sandbox_adapter_uses_sandbox_and_marks_simulated(monkey
 def test_africas_talking_production_requires_production_username_and_acceptance_is_not_simulated(monkeypatch):
     import app.services.sms_providers as sms
     monkeypatch.setattr(settings,"sms_environment","production")
-    monkeypatch.setattr(settings,"sms_username","sandbox")
-    monkeypatch.setattr(settings,"sms_api_key","unit-test-key")
+    monkeypatch.setattr(settings,"sms_provider","africas_talking")
+    monkeypatch.setattr(settings,"app_env","production")
+    monkeypatch.setattr(settings,"sms_production_username","sandbox")
+    monkeypatch.setattr(settings,"sms_production_api_key","unit-test-key")
     with pytest.raises(SmsProviderError):
         AfricasTalkingSmsProvider().send_sms(to="+254700000000",message="Test",idempotency_key="at-prod-0001")
-    monkeypatch.setattr(settings,"sms_username","production-app")
+    monkeypatch.setattr(settings,"sms_production_username","production-app")
     calls=[]
     class Response:
         def raise_for_status(self):pass
@@ -368,8 +382,9 @@ def test_africas_talking_production_requires_production_username_and_acceptance_
 def test_africas_talking_rejected_status_is_failure(monkeypatch):
     import app.services.sms_providers as sms
     monkeypatch.setattr(settings,"sms_environment","sandbox")
-    monkeypatch.setattr(settings,"sms_username","sandbox")
-    monkeypatch.setattr(settings,"sms_api_key","unit-test-key")
+    monkeypatch.setattr(settings,"sms_provider","africas_talking")
+    monkeypatch.setattr(settings,"sms_sandbox_username","sandbox")
+    monkeypatch.setattr(settings,"sms_sandbox_api_key","unit-test-key")
     class Response:
         def raise_for_status(self):pass
         def json(self):return {"SMSMessageData":{"Recipients":[{"statusCode":401,"status":"Invalid recipient"}]}}

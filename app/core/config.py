@@ -14,6 +14,10 @@ class UnsafePaymentConfigurationError(ValueError):
     """Payment settings are incomplete or unsafe for the selected environment."""
 
 
+class UnsafeSmsConfigurationError(ValueError):
+    """SMS settings are incomplete or unsafe for the selected environment."""
+
+
 def validate_payment_settings(config) -> None:
     """Fail closed when a provider/environment combination could cause real charges."""
     app_env = str(config.app_env).strip().lower()
@@ -70,6 +74,34 @@ def validate_payment_settings(config) -> None:
         raise UnsafePaymentConfigurationError("Production Daraja callback URL must use HTTPS.")
 
 
+def validate_sms_settings(config) -> None:
+    environment = str(config.sms_environment).strip().lower()
+    app_environment = str(config.app_env).strip().lower()
+    provider = str(config.sms_provider).strip().lower()
+    if environment == "production" and app_environment not in {"production", "prod"}:
+        raise UnsafeSmsConfigurationError("SMS_ENVIRONMENT=production requires APP_ENV=production.")
+    if provider == "mock":
+        return
+    if provider not in {"http", "africas_talking"}:
+        raise UnsafeSmsConfigurationError("Unsupported SMS provider configuration.")
+    if app_environment not in {"development", "dev", "test", "testing", "local", "production", "prod"}:
+        raise UnsafeSmsConfigurationError("SMS provider requires APP_ENV=development, test, or production.")
+    if environment == "sandbox" and app_environment in {"production", "prod"}:
+        raise UnsafeSmsConfigurationError("Production APP_ENV cannot use the SMS sandbox.")
+    if environment == "sandbox":
+        api_key = config.sms_sandbox_api_key
+        username = config.sms_sandbox_username
+        endpoint = config.sms_sandbox_api_url
+    else:
+        api_key = config.sms_production_api_key or config.sms_api_key
+        username = config.sms_production_username or config.sms_username
+        endpoint = config.sms_production_api_url or config.sms_api_url
+    if provider == "africas_talking" and (not api_key.strip() or not username.strip()):
+        raise UnsafeSmsConfigurationError(f"Africa's Talking {environment} credentials are not configured.")
+    if provider == "http" and (not api_key.strip() or not endpoint.strip().startswith("https://")):
+        raise UnsafeSmsConfigurationError("HTTP SMS requires an API key and HTTPS endpoint for the selected environment.")
+
+
 class Settings(BaseSettings):
     app_name: str = "Smart Agriculture Advisory and Market Linkage API"
     app_env: str = "development"
@@ -113,6 +145,13 @@ class Settings(BaseSettings):
     sms_api_url: str = ""
     sms_sender_id: str = ""
     sms_username: str = "sandbox"
+    sms_sandbox_api_key: str = Field(default="", repr=False)
+    sms_sandbox_api_url: str = ""
+    sms_sandbox_username: str = "sandbox"
+    sms_production_api_key: str = Field(default="", repr=False)
+    sms_production_api_url: str = ""
+    sms_production_username: str = ""
+    sms_production_sender_id: str = ""
     sms_environment: Literal["sandbox", "production"] = "sandbox"
     sms_auto_dispatch: bool = False
     sms_webhook_secret: str = Field(default="", repr=False)
@@ -123,6 +162,7 @@ class Settings(BaseSettings):
     disease_image_max_bytes: int = Field(default=8_388_608, ge=1024, le=25_000_000)
     disease_input_size: int = Field(default=224, ge=32, le=1024)
     disease_confidence_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    product_image_max_bytes: int = Field(default=5_242_880, ge=1024, le=15_000_000)
 
     payment_provider: Literal["mock", "daraja"] = "mock"
     escrow_provider: Literal["mock", "partner"] = "mock"
@@ -132,6 +172,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def payment_environment_is_safe(self):
         validate_payment_settings(self)
+        validate_sms_settings(self)
         return self
 
     model_config = SettingsConfigDict(

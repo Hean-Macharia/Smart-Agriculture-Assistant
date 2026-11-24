@@ -1,7 +1,12 @@
+from io import BytesIO
+from pathlib import Path
+from secrets import token_hex
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Response, UploadFile, status
+from PIL import Image, UnidentifiedImageError
 
+from app.core.config import BACKEND_ROOT, settings
 from app.core.dependencies import get_current_user, get_marketplace_repository, require_roles
 from app.models.user import UserRole
 from app.repositories.marketplace_repository import MarketplaceRepository
@@ -11,6 +16,47 @@ from app.services.marketplace_service import create_product, update_product
 
 router = APIRouter(prefix="/marketplace/products", tags=["Marketplace"])
 ProductId = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{24}$")]
+MAX_PRODUCT_IMAGE_PIXELS = 20_000_000
+
+
+@router.post("/images", status_code=status.HTTP_201_CREATED, summary="Upload a validated marketplace image (local development storage)")
+async def upload_product_image(
+    image: Annotated[UploadFile, File(description="JPEG, PNG or WebP image; max 5 MiB by default")],
+    _: UserPublic = Depends(require_roles(UserRole.FARMER)),
+):
+    if settings.app_env.lower() not in {"development", "dev", "test", "testing", "local"}:
+        raise HTTPException(status_code=503, detail="Production image storage is not configured")
+    if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        await image.close()
+        raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, or WebP image")
+    try:
+        raw = await image.read(settings.product_image_max_bytes + 1)
+    finally:
+        await image.close()
+    if len(raw) > settings.product_image_max_bytes:
+        raise HTTPException(status_code=413, detail="Image exceeds the configured upload limit")
+    if not raw:
+        raise HTTPException(status_code=422, detail="Image file is empty")
+    try:
+        with Image.open(BytesIO(raw)) as image_source:
+            if image_source.width * image_source.height > MAX_PRODUCT_IMAGE_PIXELS:
+                raise HTTPException(status_code=413, detail="Image dimensions exceed the supported limit")
+            if image_source.format not in {"JPEG", "PNG", "WEBP"}:
+                raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, or WebP image")
+            image_source.load()
+            image_source.thumbnail((1600, 1600))
+            normalized = image_source.convert("RGB")
+            output = BytesIO()
+            normalized.save(output, format="WEBP", quality=82, method=4)
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise HTTPException(status_code=422, detail="Image file is invalid or could not be decoded") from None
+    directory = BACKEND_ROOT / "uploads" / "product_images"
+    directory.mkdir(parents=True, exist_ok=True)
+    filename = f"{token_hex(16)}.webp"
+    (directory / filename).write_bytes(output.getvalue())
+    return {"url": f"/media/products/{filename}", "content_type": "image/webp", "width": normalized.width, "height": normalized.height}
 
 
 @router.post("", response_model=ProductPublic, status_code=status.HTTP_201_CREATED, summary="List produce for sale")

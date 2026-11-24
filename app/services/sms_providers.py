@@ -5,7 +5,7 @@ from typing import Protocol
 from urllib.parse import urlparse
 import httpx
 
-from app.core.config import settings
+from app.core.config import settings, validate_sms_settings
 
 
 class SmsProviderError(RuntimeError):
@@ -37,9 +37,18 @@ class HttpSmsProvider:
 
     name = "http"
 
+    @staticmethod
+    def _validate_configuration() -> None:
+        try:
+            validate_sms_settings(settings)
+        except ValueError as exc:
+            raise SmsProviderError("SMS provider configuration is unsafe or incomplete") from exc
+
     def send_sms(self, *, to: str, message: str, idempotency_key: str) -> SmsResult:
-        endpoint = settings.sms_api_url.strip()
-        api_key = settings.sms_api_key.strip()
+        self._validate_configuration()
+        sandbox = settings.sms_environment == "sandbox"
+        endpoint = (settings.sms_sandbox_api_url if sandbox else settings.sms_production_api_url or settings.sms_api_url).strip()
+        api_key = (settings.sms_sandbox_api_key if sandbox else settings.sms_production_api_key or settings.sms_api_key).strip()
         if not endpoint or not api_key:
             raise SmsProviderError("SMS HTTP adapter is not configured")
         if urlparse(endpoint).scheme != "https" or not urlparse(endpoint).hostname:
@@ -64,9 +73,17 @@ class AfricasTalkingSmsProvider:
     """Africa's Talking SMS v1 adapter; sandbox sends to its simulator, not a handset."""
 
     def __init__(self):
+        try:
+            validate_sms_settings(settings)
+        except ValueError as exc:
+            raise SmsProviderError("SMS provider configuration is unsafe or incomplete") from exc
         self.environment = settings.sms_environment
-        self.username = settings.sms_username.strip()
-        self.api_key = settings.sms_api_key.strip()
+        if self.environment == "sandbox":
+            self.username = settings.sms_sandbox_username.strip()
+            self.api_key = settings.sms_sandbox_api_key.strip()
+        else:
+            self.username = (settings.sms_production_username or settings.sms_username).strip()
+            self.api_key = (settings.sms_production_api_key or settings.sms_api_key).strip()
         self.endpoint = (
             "https://api.sandbox.africastalking.com/version1/messaging"
             if self.environment == "sandbox"
@@ -85,8 +102,9 @@ class AfricasTalkingSmsProvider:
             raise SmsProviderError("Production SMS requires the production app username")
         headers = {"apiKey": self.api_key, "Accept": "application/json"}
         form = {"username": self.username, "to": to, "message": message}
-        if settings.sms_sender_id.strip():
-            form["from"] = settings.sms_sender_id.strip()
+        sender_id = settings.sms_sender_id if self.environment == "sandbox" else settings.sms_production_sender_id or settings.sms_sender_id
+        if sender_id.strip():
+            form["from"] = sender_id.strip()
         try:
             response = httpx.post(
                 self.endpoint,
@@ -116,6 +134,10 @@ class AfricasTalkingSmsProvider:
 
 
 def get_sms_provider() -> SmsProvider:
+    try:
+        validate_sms_settings(settings)
+    except ValueError as exc:
+        raise SmsProviderError("SMS provider configuration is unsafe or incomplete") from exc
     if settings.sms_provider == "http":
         return HttpSmsProvider()
     if settings.sms_provider == "africas_talking":

@@ -19,6 +19,9 @@ from app.models.notification import NotificationStatus
 from app.schemas.user import UserPublic
 from app.services.notification_service import NotificationConsentRequiredError, send_notification
 from app.services.sms_providers import SmsResult
+from app.core.config import Settings
+from pydantic import ValidationError
+from app.services.ussd_service import MockUssdProvider, UssdRequest
 
 USER_ID = "64b000000000000000000021"
 PHONE = "+254712345678"
@@ -38,7 +41,7 @@ class MemoryPreferences:
         self.phone_state = {}
 
     def get_for_user(self, user_id, phone):
-        return {"phone_number": phone, "consented": self.consented, "language": self.language, "categories": self.categories, "phone_verified": False, "consented_at": None, "opted_out_at": None, "consent_history": []}
+        return {"phone_number": phone, "consented": self.consented, "language": self.language, "categories": self.categories, "phone_verified": getattr(self, "verified", False), "consented_at": None, "opted_out_at": None, "consent_history": []}
 
     def save_for_user(self, **kwargs):
         self.consented = kwargs["consented"]
@@ -50,7 +53,7 @@ class MemoryPreferences:
         return self.phone_state.get(phone)
 
     def set_phone_consent(self, *, phone_number, consented, source):
-        self.phone_state[phone_number] = {"phone_number": phone_number, "consented": consented, "language": "en"}
+        self.phone_state[phone_number] = {"phone_number": phone_number, "consented": consented, "language": "en", "phone_verified": consented and source == "inbound_sms"}
         return self.phone_state[phone_number]
 
     def set_phone_language(self, *, phone_number, language, source):
@@ -115,6 +118,7 @@ def test_outbound_sms_requires_explicit_consent_and_respects_kiswahili_template(
     assert provider.calls == []
 
     prefs.consented = True
+    prefs.verified = True
     prefs.language = "sw"
     prefs.categories = ["PAYMENT_CONFIRMATION"]
     outcome = send_notification(recipient_user_id=USER_ID, event="PAYMENT_CONFIRMATION", message="Sensitive amount should not be sent", idempotency_key="test-sms-0002", users=users, notifications=notifications, preferences=prefs, provider=provider)
@@ -167,6 +171,10 @@ def test_inbound_commands_require_secret_are_idempotent_and_support_opt_out(sms_
     stop = client.post("/notifications/inbound/africas-talking", data={**data, "text": "STOP", "id": "provider-msg-101"}, headers=headers)
     assert stop.status_code == 200
     assert prefs.phone_state[PHONE]["consented"] is False
+    start = client.post("/notifications/inbound/africas-talking", data={**data, "text": "START", "id": "provider-msg-102"}, headers=headers)
+    assert start.status_code == 200
+    assert prefs.phone_state[PHONE]["consented"] is True
+    assert prefs.phone_state[PHONE]["phone_verified"] is True
 
 
 def test_delivery_receipt_requires_valid_hmac(sms_client):
@@ -181,3 +189,33 @@ def test_delivery_receipt_requires_valid_hmac(sms_client):
     assert response.status_code == 404
     rejected = client.post("/notifications/callback/delivery", content=raw, headers={"Content-Type": "application/json", "X-SMS-Signature": "invalid"})
     assert rejected.status_code == 401
+
+
+def test_sms_environment_separation_rejects_production_in_development():
+    with pytest.raises(ValidationError, match="SMS_ENVIRONMENT=production requires APP_ENV=production"):
+        Settings(_env_file=None, app_env="development", payment_provider="mock", sms_provider="africas_talking", sms_environment="production", sms_production_api_key="production-only-key", sms_production_username="prod-app")
+
+
+def test_ussd_mock_menu_is_explicitly_not_live():
+    response = MockUssdProvider().respond(UssdRequest("session-1", PHONE, "", "sw"))
+    assert response.startswith("CON")
+    assert "Hali ya hewa" in response
+
+
+def test_ussd_mock_endpoint_is_dev_only_and_labels_simulation(monkeypatch):
+    monkeypatch.setattr(config.settings, "app_env", "test")
+    with TestClient(app) as client:
+        response = client.post("/ussd/mock/session", json={
+            "session_id": "demo-session",
+            "phone_number": "0712345678",
+            "text": "",
+            "language": "sw",
+        })
+        assert response.status_code == 200
+        assert response.json()["provider"] == "mock_ussd"
+        assert response.json()["live_gateway_connected"] is False
+        assert response.json()["response"].startswith("CON")
+
+        monkeypatch.setattr(config.settings, "app_env", "production")
+        hidden = client.post("/ussd/mock/session", json={"session_id": "demo-session", "phone_number": PHONE})
+        assert hidden.status_code == 404

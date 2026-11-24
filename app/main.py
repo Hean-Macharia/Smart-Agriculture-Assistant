@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo.errors import PyMongoError
 from bson import ObjectId
@@ -63,6 +64,7 @@ from app.routes.pesticides import router as pesticides_router
 from app.routes.crop_planning import router as crop_planning_router
 from app.routes.pest_knowledge import router as pest_knowledge_router
 from app.routes.admin import router as admin_router
+from app.routes.ussd import router as ussd_router
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,7 @@ app.include_router(pesticides_router)
 app.include_router(crop_planning_router)
 app.include_router(pest_knowledge_router)
 app.include_router(admin_router)
+app.include_router(ussd_router)
 
 
 @app.middleware("http")
@@ -182,6 +185,19 @@ async def append_admin_audit_event(request: Request, call_next):
 
 # Serve the built single-page frontend when a frontend build is present.
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+product_images = Path(__file__).resolve().parent.parent / "uploads" / "product_images"
+
+
+@app.get("/media/products/{filename}", include_in_schema=False)
+def product_image_file(filename: str):
+    if not re.fullmatch(r"[0-9a-f]{32}\.webp", filename):
+        return JSONResponse(status_code=404, content={"detail": "Image not found"})
+    target = product_images / filename
+    if not target.is_file():
+        return JSONResponse(status_code=404, content={"detail": "Image not found"})
+    return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "public, max-age=86400"})
+
+
 if frontend_dist.is_dir():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 

@@ -56,6 +56,8 @@ class SmsPreferencesRepository:
         now = datetime.now(timezone.utc)
         user_object_id = ObjectId(user_id)
         previous = self.preferences.find_one({"user_id": user_object_id}) or self.preferences.find_one({"phone_number": phone_number})
+        if previous and previous.get("user_id") not in {None, user_object_id}:
+            raise ValueError("This phone number is associated with another account")
         phone_changed = bool(previous and previous.get("phone_number") != phone_number)
         if phone_changed:
             consented = False
@@ -92,6 +94,7 @@ class SmsPreferencesRepository:
         now = datetime.now(timezone.utc)
         action = "CONSENT_GRANTED" if consented else "CONSENT_WITHDRAWN"
         query = {"phone_number": phone_number}
+        on_insert = {"phone_verified": False, "language": "en", "created_at": now}
         update = {
             "$set": {
                 "phone_number": phone_number,
@@ -100,11 +103,14 @@ class SmsPreferencesRepository:
                 "categories": [event.value for event in NotificationEvent] if consented else [],
                 "updated_at": now,
             },
-            "$setOnInsert": {"phone_verified": False, "language": "en", "created_at": now},
+            "$setOnInsert": on_insert,
             "$push": {"consent_history": {"action": action, "source": source, "at": now}},
         }
         if consented:
             update["$set"]["consented_at"] = now
+        if consented and source == "inbound_sms":
+            update["$set"]["phone_verified"] = True
+            on_insert.pop("phone_verified")
         result = self.preferences.find_one_and_update(query, update, upsert=True, return_document=ReturnDocument.AFTER)
         return result
 
@@ -127,6 +133,7 @@ class SmsPreferencesRepository:
             preferences
             and preferences.get("phone_number") == phone_number
             and preferences.get("consented") is True
+            and preferences.get("phone_verified") is True
             and event in preferences.get("categories", [])
         )
 
@@ -134,15 +141,8 @@ class SmsPreferencesRepository:
         now = datetime.now(timezone.utc)
         hour = now.replace(minute=0, second=0, microsecond=0)
         bucket_id = f"{phone_number}:{hour.isoformat()}"
-        try:
-            self.rate_limits.find_one_and_update(
-                {"_id": bucket_id, "count": {"$lt": hourly_limit}},
-                {"$inc": {"count": 1}, "$setOnInsert": {"expires_at": hour + timedelta(hours=2)}},
-                upsert=True,
-                return_document=ReturnDocument.AFTER,
-            )
-        except DuplicateKeyError:
-            return False
+        # Claim the provider ID first so a replay cannot consume the sender's quota.
+        # The unique index makes this atomic across concurrent webhook deliveries.
         try:
             self.inbound.insert_one({
                 "provider_message_id": provider_message_id,
@@ -150,6 +150,15 @@ class SmsPreferencesRepository:
                 "command": command[:120],
                 "created_at": now,
             })
+        except DuplicateKeyError:
+            return False
+        try:
+            self.rate_limits.find_one_and_update(
+                {"_id": bucket_id, "count": {"$lt": hourly_limit}},
+                {"$inc": {"count": 1}, "$setOnInsert": {"expires_at": hour + timedelta(hours=2)}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
         except DuplicateKeyError:
             return False
         return True

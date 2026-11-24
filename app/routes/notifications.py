@@ -37,13 +37,16 @@ def update_my_sms_preferences(payload: SmsPreferencesUpdate, user: UserPublic = 
         phone = normalize_kenyan_mobile(user.phone)
     except ValueError:
         raise HTTPException(status_code=409, detail="Update your account with a valid Kenyan mobile number first") from None
-    return preferences.save_for_user(
-        user_id=user.id,
-        phone_number=phone,
-        consented=payload.consented,
-        language=payload.language,
-        categories=[event.value for event in payload.categories],
-    )
+    try:
+        return preferences.save_for_user(
+            user_id=user.id,
+            phone_number=phone,
+            consented=payload.consented,
+            language=payload.language,
+            categories=[event.value for event in payload.categories],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @router.get("/mine", response_model=NotificationListResponse, summary="List my in-app notification and SMS attempt history")
@@ -64,7 +67,7 @@ def send_event_sms(payload: NotificationSend, response: Response, idempotency_ke
     except NotificationAccessError:
         raise HTTPException(status_code=404, detail="Recipient account not found") from None
     except NotificationConsentRequiredError:
-        raise HTTPException(status_code=409, detail="Recipient has not consented to this SMS category") from None
+        raise HTTPException(status_code=409, detail="Recipient must verify this phone by replying START and consent to this SMS category") from None
     except NotificationStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError as exc:

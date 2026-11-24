@@ -39,7 +39,8 @@ def send_notification(*, recipient_user_id: str, event: str, message: str, idemp
     except (TypeError, ValueError):
         raise NotificationStateError("The recipient account has no phone number")
     settings_for_sms = preferences.get_for_user(recipient_user_id, phone)
-    if not settings_for_sms["consented"] or event not in [item.value for item in settings_for_sms["categories"]]:
+    permitted_categories = [getattr(item, "value", item) for item in settings_for_sms["categories"]]
+    if not settings_for_sms["consented"] or not settings_for_sms["phone_verified"] or event not in permitted_categories:
         raise NotificationConsentRequiredError
     message = render_event_message(event, settings_for_sms["language"], message)
     values = {
