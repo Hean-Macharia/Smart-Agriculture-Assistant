@@ -78,11 +78,11 @@ class MemoryAdvisories:
 
 
 class MemoryFarms:
-    def get(self,fid): return {"id":FARM,"owner_id":FARMER,"county":"Nakuru"} if fid==FARM else None
+    def get(self,fid): return {"id":FARM,"owner_id":FARMER,"county":"Nakuru","location":"Njoro"} if fid==FARM else None
 
 
 class MemoryCrops:
-    def get(self,cid): return {"id":CROP,"owner_id":FARMER,"farm_id":FARM,"name":"Maize"} if cid==CROP else None
+    def get(self,cid): return {"id":CROP,"owner_id":FARMER,"farm_id":FARM,"name":"Maize","planting_date":date(2026,10,1),"expected_harvest_date":date(2027,1,15),"growth_information":"Knee-high; tassels not visible"} if cid==CROP else None
 
 
 class MemoryUsers:
@@ -203,6 +203,9 @@ def test_weather_rule_recommendation_saves_farm_crop_and_forecast_context(phase7
     data=response.json()
     assert data["kind"]=="WEATHER_RULE" and data["farm_id"]==FARM and data["crop_name"]=="Maize"
     assert data["rules_applied"]==["LOW_RAINFALL_24H"]
+    assert data["weather_data"]["farm_location"]=="Njoro, Nakuru"
+    assert data["weather_data"]["crop_context"]["planting_date"]=="2026-10-01"
+    assert "Farmer-recorded growth notes" in data["message"]
     assert client.get("/advisories/mine").json()["total"]==1
     assert "not a diagnosis" in data["message"]
 

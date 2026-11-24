@@ -5,7 +5,8 @@ const backendRoutes = [
   "/health", "/auth", "/farmers", "/buyers", "/farms", "/crops",
   "/marketplace", "/orders", "/payments", "/escrow", "/payouts",
   "/transactions", "/deliveries", "/disputes", "/weather", "/advisories",
-  "/market-prices", "/notifications", "/disease-detection",
+  "/market-prices", "/notifications", "/disease-detection", "/admin",
+  "/pesticide-records", "/crop-planning", "/pest-knowledge", "/ussd", "/media",
 ];
 
 export default defineConfig({

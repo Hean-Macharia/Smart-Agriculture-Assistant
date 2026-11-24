@@ -281,7 +281,7 @@ Phase 6 API tests use in-memory repositories and do not contact MongoDB or exter
 | POST | `/advisories/recommendations/weather` | FARMER | Fetch forecast and store transparent weather rules for an owned farm and crop |
 | PATCH | `/advisories/{advisory_id}` | Authoring officer or ADMIN | Edit or deactivate an officer-authored advisory |
 
-Weather uses OpenWeatherMap current conditions and its 5 day / 3 hour forecast API. Coordinates are supplied by the caller because existing farm records do not contain GPS coordinates. Successful responses are cached per rounded coordinate and provider key in process memory for `WEATHER_CACHE_TTL_SECONDS` (default 300, maximum 3600); `cache_hit` and `cache_valid_until` make freshness explicit. Set the TTL to `0` to disable caching. This is not a request-rate limiter and is not shared across multiple app workers. The provider key is required; missing configuration and provider failures return 503 without fabricated weather. See the [current weather API documentation](https://openweathermap.org/api/current) and [5 day forecast API documentation](https://openweathermap.org/api/forecast5).
+Weather uses OpenWeatherMap current conditions and its 5 day / 3 hour forecast API. Coordinates are supplied by the caller because existing farm records do not contain GPS coordinates. Successful responses are cached per rounded coordinate and provider key in process memory for `WEATHER_CACHE_TTL_SECONDS` (default 300, maximum 3600); `cache_hit` and `cache_valid_until` make freshness explicit. Set the TTL to `0` to disable caching. This is not a request-rate limiter and is not shared across multiple app workers. The provider key is required; missing configuration and provider failures return 503 without fabricated weather. A live forecast request succeeded during the latest verification; this confirms connectivity at that time, not guaranteed provider availability. See the [current weather API documentation](https://openweathermap.org/api/current) and [5 day forecast API documentation](https://openweathermap.org/api/forecast5).
 
 Weather recommendations are rule-based prompts, saved with the crop, farm, provider snapshot, and rules applied. The implemented rainfall rules ask farmers to check soil moisture/crop stage when forecast rainfall is low, or monitor drainage when it is high. They do not prescribe planting dates, irrigation volumes, pesticides, or guaranteed outcomes; farmers are directed to confirm decisions with county extension staff.
 
@@ -322,6 +322,8 @@ Supported categories include weather alerts, planting and crop reminders, adviso
 
 For Africa's Talking Sandbox, set `SMS_PROVIDER=africas_talking`, `SMS_ENVIRONMENT=sandbox`, `SMS_SANDBOX_USERNAME=sandbox`, and `SMS_SANDBOX_API_KEY`. Sandbox results are simulated by the provider and do not reach a handset. Keep `SMS_AUTO_DISPATCH=false` while validating. Production requires `APP_ENV=production`, `SMS_ENVIRONMENT=production`, the `SMS_PRODUCTION_*` username/key, and an approved sender ID; legacy generic key names are production-only fallback. Development cannot select production SMS. `SMS_PROVIDER=http` uses the selected environment's dedicated API URL/key and requires HTTPS. A provider acceptance is `ACCEPTED`, never confirmed handset delivery; only a valid provider receipt changes status to `DELIVERED`. Local `.env` uses mock SMS; no real SMS was sent in development verification.
 
+SMS delivery currently makes one provider attempt per idempotent request. There is no durable retry queue or automatic retry policy; transient failures remain visible for manual reconciliation so ambiguous provider acceptance does not cause duplicate messages. Live receipt verification depends on the configured provider or trusted gateway implementing the HMAC contract. The application rate-limits inbound SMS commands by phone, but does not provide general API or login rate limiting; configure a trusted production gateway before public exposure.
+
 USSD is prepared as a provider-neutral menu handler and `POST /ussd/mock/session` simulator. The simulator explicitly returns `live_gateway_connected=false`; no Kenyan short code or USSD provider is connected. Live deployment requires a carrier/aggregator account and short code, session callback URL, authentication/signature or source validation, session timeout handling, and provider-specific response protocol. It is not a live service.
 
 ### Product image upload
@@ -349,7 +351,15 @@ Farmers can upload up to five JPEG/PNG/WebP images from the listing form. `POST 
 
 Prediction requires a trained Keras model and a JSON class list that exactly matches the model output order. Images are size-limited and rejected above 25 million pixels; only a content hash and metadata are stored in MongoDB. Model assets are not version-controlled; if the deployment cannot load them, prediction returns HTTP 503. No field accuracy is claimed. In Postman, use **Disease Detection > Predict from crop image**, then **List my screening history**. Copy the returned `predicted_label` into `disease_label` and send **Get guidance for a model label** to view source links and non-chemical general guidance.
 
-`DISEASE_CONFIDENCE_THRESHOLD` (default `0.60`, range 0–1) marks low-confidence model outputs as uncertain. The API recommends a clearer image and officer review for uncertain results. This threshold is a user-experience rule, not a calibrated probability or diagnostic performance guarantee. The trained model's reported PlantVillage test metrics do not establish accuracy on Kenyan field images.
+`DISEASE_CONFIDENCE_THRESHOLD` (default `0.60`, range 0–1) marks low-confidence model outputs as uncertain. The API recommends a clearer image and officer review for uncertain results. This threshold is a user-experience rule, not a calibrated probability or diagnostic performance guarantee. No independently reproducible held-out evaluation dataset is included in this repository, so this project currently reports no numeric accuracy, precision, recall, F1-score, or confusion matrix. Do not infer Kenyan field performance from training data or external model claims.
+
+To evaluate on a separate held-out dataset, arrange images in one folder per exact class string from `uploads/models/crop_disease_labels.json`, then run:
+
+```powershell
+python -m scripts.evaluate_disease_model PATH\TO\HELD_OUT_DATASET
+```
+
+The utility validates that all 11 class folders have supported images and prints overall accuracy, macro precision/recall/F1, per-class metrics, support counts, and the confusion matrix. Use images excluded from model training and tuning. The result applies only to that dataset; reliable claims about Kenyan farm conditions require a representative, independently labeled Kenyan field set.
 
 ### Phase 5 disease history and farmer monitoring
 
