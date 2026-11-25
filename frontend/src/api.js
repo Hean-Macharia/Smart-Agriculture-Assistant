@@ -1,17 +1,30 @@
 const BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-const TOKEN_KEY = "shambalink_access_token";
 const USER_KEY = "shambalink_user";
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
+const LEGACY_TOKEN_KEY = "shambalink_access_token";
+let accessToken = null;
+try { localStorage.removeItem(LEGACY_TOKEN_KEY); } catch {}
+export const getToken = () => accessToken;
 export const savedUser = () => { try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; } };
-export const saveSession = (token, user) => { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(USER_KEY, JSON.stringify(user)); };
-export const clearSession = () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); };
+export const saveSession = (token, user) => { accessToken = token; localStorage.removeItem(LEGACY_TOKEN_KEY); localStorage.setItem(USER_KEY, JSON.stringify(user)); };
+export const clearSession = () => { accessToken = null; localStorage.removeItem(LEGACY_TOKEN_KEY); localStorage.removeItem(USER_KEY); };
+
+function notifyConnectivity(online) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("shambalink:connectivity", { detail: { online } }));
+}
 
 export async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = getToken();
   if (token && !headers.has("Authorization")) headers.set("Authorization", "Bearer " + token);
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(BASE + path, { ...options, headers });
+  let response;
+  try {
+    response = await fetch(BASE + path, { ...options, headers });
+    notifyConnectivity(true);
+  } catch (error) {
+    notifyConnectivity(false);
+    throw error;
+  }
   if (response.status === 204) return null;
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("json") ? await response.json() : await response.text();

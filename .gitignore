@@ -13,3 +13,6 @@ uploads/models/*
 frontend/node_modules/
 frontend/.tooling/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+offline-*-test-tmp/

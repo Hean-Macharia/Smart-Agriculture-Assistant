@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
 
 from app.core.dependencies import get_farm_repository, require_roles
 from app.models.user import UserRole
@@ -16,10 +17,14 @@ FarmId = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{24}$")]
 @router.post("", response_model=FarmPublic, status_code=status.HTTP_201_CREATED, summary="Register a farm")
 def post_farm(
     payload: FarmCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=16, max_length=128),
     user: UserPublic = Depends(require_roles(UserRole.FARMER)),
     repository: FarmRepository = Depends(get_farm_repository),
 ) -> FarmPublic:
-    return create_farm(repository, user.id, payload)
+    try:
+        return create_farm(repository, user.id, payload, idempotency_key=idempotency_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("", response_model=FarmListResponse, summary="List my active farms")
@@ -49,11 +54,20 @@ def get_farm(
 def patch_farm(
     farm_id: FarmId,
     payload: FarmUpdate,
+    if_match: str | None = Header(default=None, alias="If-Match", max_length=100),
     user: UserPublic = Depends(require_roles(UserRole.FARMER)),
     repository: FarmRepository = Depends(get_farm_repository),
 ) -> FarmPublic:
-    farm = update_farm(repository, farm_id, user.id, payload)
+    expected_updated_at = None
+    if if_match is not None:
+        try:
+            expected_updated_at = datetime.fromisoformat(if_match.strip().strip('"').replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="If-Match must contain the farm updated_at timestamp") from exc
+    farm = update_farm(repository, farm_id, user.id, payload, expected_updated_at=expected_updated_at)
     if farm is None:
+        if expected_updated_at is not None and repository.get(farm_id):
+            raise HTTPException(status_code=409, detail="Farm changed on the server; review the latest values before retrying")
         raise HTTPException(status_code=404, detail="Farm not found")
     return farm
 

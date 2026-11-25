@@ -8,6 +8,8 @@ def public_document(document: dict | None) -> dict | None:
     result = dict(document)
     result["id"] = str(result.pop("_id"))
     result.pop("_internal_user_id", None)
+    result.pop("_client_operation_id", None)
+    result.pop("_client_operation_hash", None)
     for key in ("owner_id", "user_id", "farmer_id"):
         if key in result:
             result[key] = str(result[key])

@@ -3,6 +3,95 @@
   --page-gutter: clamp(1rem, 4vw, 2rem);
 }
 
+/* iOS standalone mode uses the full display area, including the notch. */
+.site-header {
+  height: auto;
+  min-height: calc(78px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+
+.work-top {
+  padding-top: max(10px, env(safe-area-inset-top));
+}
+
+.work-content {
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
+}
+
+.offline-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  min-height: 48px;
+  padding: max(6px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 6px max(14px, env(safe-area-inset-left));
+  color: #f7f7f2;
+  background: #17472f;
+  font-size: .76rem;
+}
+
+.offline-toolbar > span:nth-child(2) {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 170px;
+}
+
+.offline-toolbar b { font-size: .77rem; }
+.offline-toolbar small { color: #d4e3d0; font-size: .65rem; overflow-wrap: anywhere; }
+.offline-toolbar.is-offline { background: #704923; }
+.offline-toolbar.is-offline small { color: #fff0d1; }
+.connection-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #8bd18a; }
+.is-offline .connection-dot { background: #ffcb70; }
+.offline-action,
+.sync-details summary,
+.sync-items button {
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255,255,255,.42);
+  border-radius: 9px;
+  color: white;
+  background: rgba(255,255,255,.09);
+  font-size: .7rem;
+  font-weight: 700;
+  touch-action: manipulation;
+}
+.sync-details { position: relative; }
+.sync-details summary { display: grid; align-items: center; cursor: pointer; list-style: none; }
+.sync-details summary::-webkit-details-marker { display: none; }
+.sync-items {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 210;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(65vh, 420px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #e4e9df;
+  border-radius: 13px;
+  color: #23382b;
+  background: white;
+  box-shadow: 0 14px 35px rgba(25,50,33,.2);
+}
+.sync-items article { display: grid; gap: 5px; padding: 8px; border-bottom: 1px solid #edf0ea; }
+.sync-items small { color: #66746a; }
+.sync-items button { width: fit-content; color: #17472f; border-color: #cbd9c8; background: #f5f8f2; }
+.pending-tag { color: #845c22 !important; font-size: .65rem; }
+.offline-note { padding: 10px; border-radius: 10px; background: #f5f7ef; font-size: .75rem; }
+
+@media (max-width: 520px) {
+  .offline-toolbar { gap: 7px; padding-inline: max(10px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-right)); }
+  .offline-toolbar > span:nth-child(2) { flex-basis: calc(100% - 30px); }
+  .offline-toolbar .sync-details { flex: 1 1 auto; }
+  .sync-items { position: fixed; top: 54px; right: max(8px, env(safe-area-inset-right)); }
+}
+
 html,
 body,
 #root {
@@ -536,4 +625,105 @@ canvas {
   .drawer-backdrop {
     transition: none;
   }
+}
+
+/* Keep disease results in a readable vertical flow; the theme's old flex row
+   placed the diagnosis, confidence and guidance beside each other. */
+.prediction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 18px;
+  padding: clamp(14px, 2.2vw, 21px);
+  border: 1px solid #dce9d6;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #f4f8ee, #eef5e8);
+  color: #435b46;
+  overflow-wrap: anywhere;
+}
+
+.prediction > b {
+  display: block;
+  min-width: 0;
+  color: #244f32;
+  font-size: clamp(1.08rem, 2vw, 1.38rem);
+  line-height: 1.32;
+}
+
+.prediction > small {
+  display: block;
+  min-width: 0;
+  color: #5d705f;
+  font-size: .78rem;
+  line-height: 1.55;
+}
+
+.prediction > p {
+  min-width: 0;
+  margin: 0;
+  color: #536456;
+  line-height: 1.65;
+}
+
+.prediction h3 {
+  min-width: 0;
+  margin: 2px 0 0;
+  color: #294d35;
+  font-size: .98rem;
+  letter-spacing: -.02em;
+}
+
+.prediction ul {
+  min-width: 0;
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #536456;
+  line-height: 1.65;
+}
+
+.prediction li {
+  padding-left: 2px;
+  overflow-wrap: anywhere;
+}
+
+.prediction .panel-error {
+  padding: 10px 12px;
+  border: 1px solid #efd5cf;
+  border-radius: 10px;
+  background: #fff7f4;
+  line-height: 1.55;
+}
+
+.prediction .knowledge-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.prediction .knowledge-sources a {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #dce8d7;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .76);
+  font-size: .76rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.disease,
+.disease-tips,
+.disease .form {
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .prediction { gap: 10px; }
+  .prediction > small { font-size: .74rem; }
+  .prediction .knowledge-sources { grid-template-columns: minmax(0, 1fr); }
 }

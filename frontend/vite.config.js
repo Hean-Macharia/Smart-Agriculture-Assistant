@@ -9,8 +9,20 @@ const backendRoutes = [
   "/pesticide-records", "/crop-planning", "/pest-knowledge", "/ussd", "/media",
 ];
 
+function offlineAssetManifest() {
+  return {
+    name: "shambalink-offline-asset-manifest",
+    generateBundle(_options, bundle) {
+      const assets = Object.values(bundle)
+        .filter((entry) => entry.type === "chunk" || (entry.type === "asset" && /\.(?:css|woff2?|svg|png|webp)$/i.test(entry.fileName)))
+        .map((entry) => `/${entry.fileName}`);
+      this.emitFile({ type: "asset", fileName: "precache-assets.json", source: JSON.stringify({ version: "1.1.0", assets }) });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), offlineAssetManifest()],
   server: {
     host: "127.0.0.1",
     port: 5173,

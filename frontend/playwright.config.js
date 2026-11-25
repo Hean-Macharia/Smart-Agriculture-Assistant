@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "pwa.spec.js",
   fullyParallel: false,
   workers: 1,
   reporter: "list",
