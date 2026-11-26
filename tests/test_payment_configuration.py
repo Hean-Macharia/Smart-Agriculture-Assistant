@@ -34,6 +34,10 @@ def build_settings(**overrides):
         **SANDBOX,
         **overrides,
     }
+    if str(values["app_env"]).lower() in {"production", "prod"}:
+        values.setdefault("debug", False)
+        values.setdefault("jwt_secret_key", "test-production-signing-secret-32-chars")
+        values.setdefault("mongodb_uri", "mongodb+srv://db.example.test/smart_agriculture")
     return Settings(_env_file=None, **values)
 
 
@@ -60,6 +64,48 @@ def test_production_sandbox_daraja_configuration_is_rejected():
 def test_correct_production_daraja_configuration_is_valid():
     configured = build_settings(app_env="production", mpesa_environment="production", **PRODUCTION)
     validate_payment_settings(configured)
+
+
+def test_production_mock_configuration_is_valid_with_safe_application_settings():
+    configured = Settings(
+        _env_file=None,
+        app_env="production",
+        debug=False,
+        jwt_secret_key="test-production-signing-secret-32-chars",
+        mongodb_uri="mongodb+srv://db.example.test/app",
+        database_name="smart_agriculture",
+        payment_provider="mock",
+        sms_provider="mock",
+        sms_environment="production",
+    )
+    assert configured.payment_provider == "mock"
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"debug": True}, "DEBUG must be false"),
+        ({"jwt_secret_key": "short"}, "JWT_SECRET_KEY must contain at least 32 characters"),
+        ({"mongodb_uri": ""}, "valid remote MongoDB URI"),
+        ({"mongodb_uri": "mongodb://localhost:27017"}, "cannot point to a local database"),
+        ({"database_name": ""}, "DATABASE_NAME must be configured"),
+        ({"cors_allowed_origins": "*"}, "explicit HTTPS origins"),
+        ({"cors_allowed_origins": "http://example.test"}, "explicit HTTPS origins"),
+    ],
+)
+def test_unsafe_production_application_settings_fail_closed(overrides, message):
+    with pytest.raises(ValidationError, match=message):
+        Settings(_env_file=None, **{
+            "app_env": "production",
+            "debug": False,
+            "jwt_secret_key": "test-production-signing-secret-32-chars",
+            "mongodb_uri": "mongodb+srv://db.example.test/app",
+            "database_name": "smart_agriculture",
+            "payment_provider": "mock",
+            "sms_provider": "mock",
+            "sms_environment": "production",
+            **overrides,
+        })
 
 
 def test_daraja_missing_credentials_fails_closed():

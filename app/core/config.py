@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -102,6 +103,27 @@ def validate_sms_settings(config) -> None:
         raise UnsafeSmsConfigurationError("HTTP SMS requires an API key and HTTPS endpoint for the selected environment.")
 
 
+def validate_production_settings(config) -> None:
+    """Reject unsafe or incomplete application-wide production configuration."""
+    if str(config.app_env).strip().lower() not in {"production", "prod"}:
+        return
+    if config.debug:
+        raise ValueError("DEBUG must be false when APP_ENV=production.")
+    if len(config.jwt_secret_key.strip()) < 32:
+        raise ValueError("Production JWT_SECRET_KEY must contain at least 32 characters.")
+    uri = config.mongodb_uri.strip()
+    parsed_uri = urlsplit(uri)
+    if parsed_uri.scheme not in {"mongodb", "mongodb+srv"} or not parsed_uri.hostname:
+        raise ValueError("MONGODB_URI must be a valid remote MongoDB URI when APP_ENV=production.")
+    if parsed_uri.hostname.lower() in {"localhost", "127.0.0.1", "::1"} or parsed_uri.hostname.lower().endswith(".local"):
+        raise ValueError("Production MONGODB_URI cannot point to a local database.")
+    if not config.database_name.strip():
+        raise ValueError("DATABASE_NAME must be configured when APP_ENV=production.")
+    origins = [origin.strip().rstrip("/") for origin in config.cors_allowed_origins.split(",") if origin.strip()]
+    if any(not origin.startswith("https://") or "*" in origin for origin in origins):
+        raise ValueError("Production CORS origins must be explicit HTTPS origins.")
+
+
 class Settings(BaseSettings):
     app_name: str = "Smart Agriculture Advisory and Market Linkage API"
     app_env: str = "development"
@@ -173,6 +195,7 @@ class Settings(BaseSettings):
     def payment_environment_is_safe(self):
         validate_payment_settings(self)
         validate_sms_settings(self)
+        validate_production_settings(self)
         return self
 
     model_config = SettingsConfigDict(

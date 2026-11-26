@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: smart-agriculture-assistant-render-template
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: DATABASE_NAME
+        sync: false
+      - key: PAYMENT_PROVIDER
+        value: mock
+      - key: MPESA_ENVIRONMENT
+        value: sandbox
+      - key: ESCROW_PROVIDER
+        value: mock
+      - key: SMS_PROVIDER
+        value: mock
+      - key: SMS_ENVIRONMENT
+        value: production
+      - key: SMS_AUTO_DISPATCH
+        value: "false"
